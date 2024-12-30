@@ -1,0 +1,10 @@
+# Python 3.12.7
+python-dotenv>=1.1.0
+requests>=2.31.0
+numpy>=1.24.0
+pandas>=2.0.0
+googlemaps>=4.10.0
+ortools>=9.12.4544
+fastapi[all]==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
