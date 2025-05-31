@@ -4,7 +4,7 @@ Travel planning application to organize trips by optimizing itineraries.
 
 ### Tech Stack
 - Backend: Python (FastAPI)
-- Frontend: 
+- Frontend: React
 
 ### Backend set up
 1. Create and activate a virtual environment
@@ -47,5 +47,11 @@ Example
 
 
 ### Running the frontend
-TODO
+```
+npm start
+```
 
+Example
+```
+Big Ben (Elizabeth Tower), Tower Bridge, Buckingham Palace, Tower of London
+```
