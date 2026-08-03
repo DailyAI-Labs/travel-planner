@@ -1,4 +1,22 @@
-from .travel import TravelPlanRequest, TravelPlanStatus, Itinerary, RouteDetail, TravelPlanResponse
+"""
+Pydantic models describing the API's request and response payloads.
 
-__all__ = ["TravelPlanRequest", "TravelPlanStatus",
-           "Itinerary", "RouteDetail", "TravelPlanResponse"]
+Re-exports the handful of models the routers and services import by name; the
+full set lives in `app.models.travel`.
+"""
+
+from .travel import (
+    Itinerary,
+    RouteDetail,
+    TravelPlanRequest,
+    TravelPlanResponse,
+    TravelPlanStatus,
+)
+
+__all__ = [
+    "Itinerary",
+    "RouteDetail",
+    "TravelPlanRequest",
+    "TravelPlanResponse",
+    "TravelPlanStatus",
+]

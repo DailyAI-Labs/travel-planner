@@ -3,6 +3,9 @@ python-dotenv>=1.1.0
 requests>=2.31.0
 numpy>=1.24.0
 pandas>=2.0.0
+geopy>=2.4.0
+# Only used by the opt-in Google providers (GEOCODER=google,
+# MATRIX_PROVIDER=google); imported lazily, so the default setup never needs it.
 googlemaps>=4.10.0
 ortools>=9.12.4544
 fastapi[all]==0.104.1
