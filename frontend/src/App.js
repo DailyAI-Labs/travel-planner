@@ -1,386 +1,528 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
+import { checkHealth, fetchItinerary, geocodePlace, submitItinerary } from './api';
+import { LANGUAGES, useI18n } from './i18n';
+import PlaceList, { nextPlaceId } from './components/PlaceList';
+import RouteMap from './components/RouteMap';
+import Itinerary from './components/Itinerary';
+
+const POLL_INTERVAL_MS = 2000;
+const MAX_DAYS = 14;
+
+// One way of getting around per trip. Stretches the chosen mode cannot cover
+// are flagged rather than silently switched to another mode.
+const TRAVEL_MODES = ['walking', 'bicycle', 'driving'];
+const MODE_ICON = { walking: '🚶', bicycle: '🚲', driving: '🚗' };
+
+/** `datetime-local` wants local wall-clock time, not UTC. */
+function defaultStartTime() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+}
+
+
+const TOO_FAR_KEY = {
+  walking: 'error.tooFarWalking',
+  bicycle: 'error.tooFarBicycle',
+  driving: 'error.tooFarDriving',
+};
+
+/**
+ * Phrase a failed plan in the reader's language.
+ *
+ * The backend sends a stable code plus the facts for the failures worth
+ * rewording; anything else falls back to the English message it already
+ * composed, which beats showing nothing.
+ */
+function describeFailure(plan, t) {
+  if (plan.error_code === 'too_far_for_mode' && plan.error_params) {
+    const key = TOO_FAR_KEY[plan.error_params.mode] || TOO_FAR_KEY.driving;
+    return t(key, plan.error_params);
+  }
+  return plan.error || t('results.failed');
+}
 
 function App() {
-  // Health check state
-  const [healthStatus, setHealthStatus] = useState(null);
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [healthError, setHealthError] = useState(null);
+  const { language, setLanguage, t } = useI18n();
 
-  // Travel plan state
-  const [travelPlanStatus, setTravelPlanStatus] = useState(null);
-  const [travelPlanLoading, setTravelPlanLoading] = useState(false);
-  const [travelPlanError, setTravelPlanError] = useState(null);
-  const [travelPlanResponse, setTravelPlanResponse] = useState(null);
-  const [isPolling, setIsPolling] = useState(false);
+  const [places, setPlaces] = useState([]);
+  const [area, setArea] = useState('');
+  // The city is committed explicitly. Everything else is resolved against it,
+  // so it must not drift under the places already added by a stray keystroke.
+  const [committedArea, setCommittedArea] = useState('');
+  const [days, setDays] = useState(1);
+  // One entry per day; each holds the place id to start from and end at.
+  const [dayPoints, setDayPoints] = useState([{ startId: '', endId: '' }]);
+  const [mode, setMode] = useState('walking');
+  const [maxWalking, setMaxWalking] = useState(1000);
+  const [maxCycling, setMaxCycling] = useState(5000);
+  const [startTime, setStartTime] = useState(defaultStartTime);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    places: '',
-    start_idx: 0,
-    end_idx: 0,
-    start_time: '',
-    modes: '',
-    walking_preference: false,
-    max_walking_distance: 1000
-  });
+  const [code, setCode] = useState(null);
+  const [polling, setPolling] = useState(false);
+  const [plan, setPlan] = useState(null);
+  const [error, setError] = useState(null);
+  const [backendUp, setBackendUp] = useState(null);
 
-  const checkBackendHealth = async () => {
-    setHealthLoading(true);
-    setHealthError(null);
-    
-    try {
-      const response = await fetch('http://localhost:8000/health');
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setHealthStatus(data);
-    } catch (err) {
-      setHealthError(err.message);
-      setHealthStatus(null);
-    } finally {
-      setHealthLoading(false);
-    }
+  const trimmedArea = area.trim();
+  const areaLocked = committedArea !== '' && committedArea === trimmedArea;
+
+  const commitArea = () => {
+    if (!trimmedArea) return;
+    setCommittedArea(trimmedArea);
   };
 
-  // Function to check travel plan status
-  const checkTravelPlanStatus = useCallback(async (code) => {
-    try {
-      const response = await fetch(`http://localhost:8000/api/v1/travel_plan/${code}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setTravelPlanResponse(data);
-      
-      // Stop polling if status is completed or failed
-      if (data.status === 'completed' || data.status === 'failed') {
-        setIsPolling(false);
-      }
-      
-      return data;
-    } catch (err) {
-      console.error('Error checking travel plan status:', err);
-      setTravelPlanError(err.message);
-      setIsPolling(false);
-      return null;
-    }
+  useEffect(() => {
+    checkHealth().then(
+      () => setBackendUp(true),
+      () => setBackendUp(false)
+    );
   }, []);
 
-  // Auto-refresh effect for polling travel plan status
+  const updatePlace = useCallback((id, patch) => {
+    setPlaces((current) =>
+      current.map((place) => (place.id === id ? { ...place, ...patch } : place))
+    );
+  }, []);
+
+  /**
+   * Resolve a place before it joins the list.
+   *
+   * A name that resolves to nothing never becomes a list entry: the caller
+   * gets the error and the user can correct the spelling straight away.
+   */
+  const addPlace = async (name) => {
+    const result = await geocodePlace(name, committedArea);
+    if (!result.found) return { ok: false, error: result.error };
+
+    setPlaces((current) => [
+      ...current,
+      {
+        id: nextPlaceId(),
+        name,
+        resolvedFor: committedArea,
+        resolved: result.place,
+        error: null,
+      },
+    ]);
+    return { ok: true };
+  };
+
+  // Committing a different city invalidates every resolved place, so re-check
+  // them one at a time — which also stays inside the geocoder's 1 req/s budget.
   useEffect(() => {
-    let interval;
-    
-    if (isPolling && travelPlanStatus?.code) {
-      // Poll every 3 seconds
-      interval = setInterval(() => {
-        checkTravelPlanStatus(travelPlanStatus.code);
-      }, 3000);
-      
-      // Also check immediately
-      checkTravelPlanStatus(travelPlanStatus.code);
-    }
-    
+    if (!committedArea) return undefined;
+    const stale = places.find((place) => place.resolvedFor !== committedArea);
+    if (!stale) return undefined;
+
+    let cancelled = false;
+    geocodePlace(stale.name, committedArea).then(
+      (result) => {
+        if (cancelled) return;
+        updatePlace(stale.id, {
+          resolvedFor: committedArea,
+          resolved: result.found ? result.place : null,
+          error: result.found ? null : result.error || 'not found',
+        });
+      },
+      (err) => {
+        if (cancelled) return;
+        updatePlace(stale.id, {
+          resolvedFor: committedArea,
+          resolved: null,
+          error: err.message,
+        });
+      }
+    );
+
     return () => {
-      if (interval) {
-        clearInterval(interval);
+      cancelled = true;
+    };
+  }, [places, committedArea, updatePlace]);
+
+  useEffect(() => {
+    if (!code || !polling) return undefined;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const data = await fetchItinerary(code);
+        if (cancelled) return;
+        setPlan(data);
+        if (data.status === 'completed' || data.status === 'failed') {
+          setPolling(false);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(err.message);
+        setPolling(false);
       }
     };
-  }, [isPolling, travelPlanStatus?.code, checkTravelPlanStatus]);
 
-  const submitTravelPlan = async (e) => {
-    e.preventDefault();
-    setTravelPlanLoading(true);
-    setTravelPlanError(null);
-    setTravelPlanResponse(null);
-    
-    try {
-      // Parse places from comma-separated string
-      const placesArray = formData.places.split(',').map(place => place.trim()).filter(place => place);
-      
-      // Parse modes from comma-separated string
-      const modesArray = formData.modes.split(',').map(mode => mode.trim()).filter(mode => mode);
-      
-      // Prepare request body
-      const requestBody = {
-        places: placesArray,
-        start_idx: parseInt(formData.start_idx),
-        end_idx: parseInt(formData.end_idx),
-        start_time: new Date(formData.start_time).toISOString(),
-        modes: modesArray,
-        walking_preference: formData.walking_preference,
-        max_walking_distance: parseInt(formData.max_walking_distance)
-      };
+    poll();
+    const timer = setInterval(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [code, polling]);
 
-      const response = await fetch('http://localhost:8000/api/v1/compute_itinerary', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setTravelPlanStatus(data);
-      
-      // Start polling if status is pending
-      if (data.status === 'pending') {
-        setIsPolling(true);
-      }
-    } catch (err) {
-      setTravelPlanError(err.message);
-      setTravelPlanStatus(null);
-    } finally {
-      setTravelPlanLoading(false);
-    }
+  const changeDays = (value) => {
+    const count = Math.max(1, Math.min(MAX_DAYS, Number(value) || 1));
+    setDays(count);
+    setDayPoints((current) => {
+      const next = current.slice(0, count);
+      while (next.length < count) next.push({ startId: '', endId: '' });
+      return next;
+    });
   };
 
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const stopPolling = () => {
-    setIsPolling(false);
-  };
-
-  const renderTravelPlanDetails = (plan) => {
-    if (!plan) return null;
-
-    return (
-      <div className="travel-plan-details">
-        <h4>Travel Plan Details</h4>
-        
-        {plan.itinerary && (
-          <div className="itinerary-section">
-            <h5>Itinerary:</h5>
-            <pre className="json-display">{JSON.stringify(plan.itinerary, null, 2)}</pre>
-          </div>
-        )}
-        
-        {plan.total_duration && (
-          <p><strong>Total Duration:</strong> {plan.total_duration}</p>
-        )}
-        
-        {plan.total_distance && (
-          <p><strong>Total Distance:</strong> {plan.total_distance}</p>
-        )}
-        
-        {plan.error && (
-          <div className="error-details">
-            <h5>Error Details:</h5>
-            <p>{plan.error}</p>
-          </div>
-        )}
-      </div>
+  const setDayPoint = (dayIndex, field, value) => {
+    setDayPoints((current) =>
+      current.map((entry, index) =>
+        index === dayIndex ? { ...entry, [field]: value } : entry
+      )
     );
   };
 
+  // Days are tracked by place id so that reordering or removing a place cannot
+  // silently point a day at the wrong stop.
+  const indexOfId = useCallback(
+    (id, fallback) => {
+      const index = places.findIndex((place) => place.id === id);
+      return index === -1 ? fallback : index;
+    },
+    [places]
+  );
+
+  const startIdxOf = (dayIndex) => indexOfId(dayPoints[dayIndex]?.startId, 0);
+  const endIdxOf = (dayIndex) =>
+    indexOfId(dayPoints[dayIndex]?.endId, places.length - 1);
+
+  const dayStarts = dayPoints.map((_, index) => startIdxOf(index));
+  const dayEnds = dayPoints.map((_, index) => endIdxOf(index));
+
+  const resolvedForArea = places.filter(
+    (place) => place.resolved && place.resolvedFor === committedArea
+  );
+  const unresolved = places.filter((place) => place.error);
+
+  const validationError = (() => {
+    if (!areaLocked) return t('error.city');
+    if (places.length < 2) return t('error.places');
+    if (unresolved.length > 0) {
+      return t('error.unresolved', {
+        names: unresolved.map((place) => place.name).join(', '),
+      });
+    }
+    if (resolvedForArea.length !== places.length) return t('error.resolving');
+    // Start and end points are not stops: a day ending elsewhere is already a
+    // journey, but a day looping back shows nothing without a place of its own.
+    const loopDays = dayStarts.filter((start, i) => start === dayEnds[i]).length;
+    const pinned = new Set([...dayStarts, ...dayEnds]);
+    if (places.length - pinned.size < loopDays) {
+      return t('error.daysTooMany', { days });
+    }
+    return null;
+  })();
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (validationError) return;
+
+    setError(null);
+    setPlan(null);
+    setCode(null);
+
+    try {
+      const response = await submitItinerary({
+        places: places.map((place) => place.name),
+        // Already resolved as they were entered, so geocoding is skipped.
+        resolved_places: places.map((place) => ({
+          query: place.name,
+          name: place.resolved.name,
+          lat: place.resolved.lat,
+          lon: place.resolved.lon,
+        })),
+        area: committedArea,
+        days,
+        start_idx: dayStarts[0],
+        end_idx: dayEnds[0],
+        day_starts: dayStarts,
+        day_ends: dayEnds,
+        start_time: new Date(startTime).toISOString(),
+        modes: [mode],
+        // Always on: the traveller picked a mode, so honour it rather than
+        // silently switching them to whatever is fastest.
+        walking_preference: true,
+        max_walking_distance: Number(maxWalking),
+        max_cycling_distance: Number(maxCycling),
+      });
+      setCode(response.code);
+      setPolling(true);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const itinerary = plan?.status === 'completed' ? plan.itinerary : null;
+
+  const placeOptions = places.map((place) => (
+    <option key={place.id} value={place.id}>
+      {place.name}
+    </option>
+  ));
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Travel Planner Dashboard</h1>
-        
-        {/* Health Check Section */}
-        <section className="section">
-          <h2>Backend Health Check</h2>
-          <button 
-            onClick={checkBackendHealth}
-            disabled={healthLoading}
-            className="health-check-btn"
+    <div className="app">
+      <header className="app-header">
+        <div>
+          <h1>{t('app.title')}</h1>
+          <p className="tagline">
+            {t('app.tagline1')}
+            <br />
+            {t('app.tagline2')}
+          </p>
+        </div>
+        <div className="header-actions">
+          <select
+            className="lang-select"
+            value={language}
+            onChange={(event) => setLanguage(event.target.value)}
+            aria-label={t('language.switch')}
           >
-            {healthLoading ? 'Checking...' : 'Check Backend Status'}
-          </button>
+            {Object.entries(LANGUAGES).map(([code, label]) => (
+              <option key={code} value={code}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <span
+            className={`health health-${backendUp === null ? 'unknown' : backendUp}`}
+          >
+            {backendUp === null && t('health.checking')}
+            {backendUp === true && t('health.online')}
+            {backendUp === false && t('health.offline')}
+          </span>
+        </div>
+      </header>
 
-          {healthStatus && (
-            <div className="status-success">
-              <h3>✅ Backend Status</h3>
-              <p><strong>Status:</strong> {healthStatus.status}</p>
-              <p><strong>Timestamp:</strong> {new Date(healthStatus.timestamp).toLocaleString()}</p>
-            </div>
-          )}
+      <main className="layout">
+        <section className="panel">
+          <form onSubmit={submit}>
+            <h2>{t('form.heading')}</h2>
 
-          {healthError && (
-            <div className="status-error">
-              <h3>❌ Connection Error</h3>
-              <p>{healthError}</p>
-            </div>
-          )}
-        </section>
+            <label className="field">
+              <span className="field-label">{t('form.city')}</span>
+              <div className="commit-row">
+                <input
+                  type="text"
+                  value={area}
+                  onChange={(event) => setArea(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    commitArea();
+                  }}
+                  placeholder={t('form.cityPlaceholder')}
+                  disabled={polling || areaLocked}
+                  required
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => (areaLocked ? setCommittedArea('') : commitArea())}
+                  disabled={polling || (!areaLocked && !trimmedArea)}
+                >
+                  {areaLocked ? t('form.cityChange') : t('form.citySet')}
+                </button>
+              </div>
+            </label>
 
-        {/* Travel Plan Section */}
-        <section className="section">
-          <h2>Plan Your Journey</h2>
-          
-          <form onSubmit={submitTravelPlan} className="travel-form">
-            <div className="form-group">
-              <label htmlFor="places">Places to Visit (comma-separated):</label>
-              <input
-                type="text"
-                id="places"
-                name="places"
-                value={formData.places}
-                onChange={handleInputChange}
-                placeholder="Paris, London, Berlin, Rome"
-                required
-                className="form-input"
+            <div className="field">
+              <span className="field-label">{t('form.places')}</span>
+              <PlaceList
+                places={places}
+                onChange={setPlaces}
+                onAdd={addPlace}
+                disabled={polling}
+                needsArea={!areaLocked}
               />
             </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="start_idx">Start Place Index:</label>
-                <input
-                  type="number"
-                  id="start_idx"
-                  name="start_idx"
-                  value={formData.start_idx}
-                  onChange={handleInputChange}
-                  min="0"
-                  required
-                  className="form-input"
-                />
+            <fieldset className="field">
+              <legend className="field-label">{t('form.mode')}</legend>
+              <div className="mode-choice">
+                {TRAVEL_MODES.map((id) => (
+                  <label
+                    key={id}
+                    className={`mode-option${mode === id ? ' mode-option-active' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="travel-mode"
+                      value={id}
+                      checked={mode === id}
+                      onChange={() => setMode(id)}
+                      disabled={polling}
+                    />
+                    <span className="mode-icon" aria-hidden="true">
+                      {MODE_ICON[id]}
+                    </span>
+                    <span>{t(`mode.${id}`)}</span>
+                  </label>
+                ))}
               </div>
+              {mode !== 'driving' && (
+                <small>{t(`mode.hint.${mode}`)}</small>
+              )}
+            </fieldset>
 
-              <div className="form-group">
-                <label htmlFor="end_idx">End Place Index:</label>
-                <input
-                  type="number"
-                  id="end_idx"
-                  name="end_idx"
-                  value={formData.end_idx}
-                  onChange={handleInputChange}
-                  min="0"
-                  required
-                  className="form-input"
-                />
+            <div className="field">
+              <span className="field-label" id="days-label">
+                {t('form.days')}
+              </span>
+              <div className="stepper" role="group" aria-labelledby="days-label">
+                <button
+                  type="button"
+                  onClick={() => changeDays(days - 1)}
+                  disabled={polling || days <= 1}
+                  aria-label={t('form.daysFewer')}
+                >
+                  −
+                </button>
+                <output className="stepper-value">{days}</output>
+                <button
+                  type="button"
+                  onClick={() => changeDays(days + 1)}
+                  disabled={polling || days >= MAX_DAYS}
+                  aria-label={t('form.daysMore')}
+                >
+                  +
+                </button>
               </div>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="start_time">Start Time:</label>
+            {places.length >= 2 &&
+              dayPoints.map((point, index) => (
+                <div key={index} className="day-block">
+                  <div className="field-row">
+                    <label className="field">
+                      <span className="field-label">
+                        {days === 1
+                          ? t('form.startAt')
+                          : t('form.dayStart', { day: index + 1 })}
+                      </span>
+                      <select
+                        value={places[startIdxOf(index)]?.id ?? ''}
+                        onChange={(event) =>
+                          setDayPoint(index, 'startId', event.target.value)
+                        }
+                        disabled={polling}
+                      >
+                        {placeOptions}
+                      </select>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">
+                        {days === 1
+                          ? t('form.finishAt')
+                          : t('form.dayFinish', { day: index + 1 })}
+                      </span>
+                      <select
+                        value={places[endIdxOf(index)]?.id ?? ''}
+                        onChange={(event) =>
+                          setDayPoint(index, 'endId', event.target.value)
+                        }
+                        disabled={polling}
+                      >
+                        {placeOptions}
+                      </select>
+                    </label>
+                  </div>
+
+                  {startIdxOf(index) === endIdxOf(index) && (
+                    <p className="hint">
+                      {days === 1
+                        ? t('form.roundTrip')
+                        : t('form.roundTripDay', { day: index + 1 })}
+                    </p>
+                  )}
+                </div>
+              ))}
+
+            <label className="field">
+              <span className="field-label">{t('form.startTime')}</span>
               <input
                 type="datetime-local"
-                id="start_time"
-                name="start_time"
-                value={formData.start_time}
-                onChange={handleInputChange}
-                required
-                className="form-input"
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
+                disabled={polling}
               />
-            </div>
+            </label>
 
-            <div className="form-group">
-              <label htmlFor="modes">Transportation Modes (comma-separated):</label>
-              <input
-                type="text"
-                id="modes"
-                name="modes"
-                value={formData.modes}
-                onChange={handleInputChange}
-                placeholder="walking, public_transport, car"
-                required
-                className="form-input"
-              />
-            </div>
+            {mode !== 'driving' && (
+              <div className="options">
+                <label className="field">
+                  <span className="field-label">
+                    {mode === 'bicycle' ? t('form.maxCycle') : t('form.maxWalk')}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={mode === 'bicycle' ? maxCycling : maxWalking}
+                    onChange={(event) =>
+                      mode === 'bicycle'
+                        ? setMaxCycling(event.target.value)
+                        : setMaxWalking(event.target.value)
+                    }
+                    disabled={polling}
+                  />
+                </label>
+              </div>
+            )}
 
-            <div className="form-group">
-              <label htmlFor="max_walking_distance">Max Walking Distance (meters):</label>
-              <input
-                type="number"
-                id="max_walking_distance"
-                name="max_walking_distance"
-                value={formData.max_walking_distance}
-                onChange={handleInputChange}
-                min="0"
-                required
-                className="form-input"
-              />
-            </div>
-
-            <div className="form-group checkbox-group">
-              <label htmlFor="walking_preference" className="checkbox-label">
-                <input
-                  type="checkbox"
-                  id="walking_preference"
-                  name="walking_preference"
-                  checked={formData.walking_preference}
-                  onChange={handleInputChange}
-                  className="checkbox-input"
-                />
-                Prefer Walking When Possible
-              </label>
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={travelPlanLoading}
-              className="submit-btn"
+            <button
+              type="submit"
+              className="primary"
+              disabled={!!validationError || polling}
             >
-              {travelPlanLoading ? 'Computing...' : 'Compute Itinerary'}
+              {polling ? t('form.submitting') : t('form.submit')}
             </button>
+
+            {validationError && places.length > 0 && (
+              <p className="hint">{validationError}</p>
+            )}
           </form>
+        </section>
 
-          {/* Travel Plan Initial Status */}
-          {travelPlanStatus && (
-            <div className="status-info">
-              <h3>📋 Travel Plan Request</h3>
-              <p><strong>Code:</strong> {travelPlanStatus.code}</p>
-              <p><strong>Initial Status:</strong> {travelPlanStatus.status}</p>
-              <p><strong>Message:</strong> {travelPlanStatus.message}</p>
-            </div>
+        <section className="panel results">
+          <h2>{t('results.heading')}</h2>
+
+          {error && <div className="alert alert-error">{error}</div>}
+
+          {plan?.status === 'failed' && (
+            <div className="alert alert-error">{describeFailure(plan, t)}</div>
           )}
 
-          {/* Polling Status */}
-          {isPolling && (
-            <div className="status-polling">
-              <h3>🔄 Checking Status...</h3>
-              <p>Auto-refreshing every 3 seconds</p>
-              <button onClick={stopPolling} className="stop-polling-btn">
-                Stop Checking
-              </button>
-            </div>
+          {polling && (
+            <div className="alert alert-info">{t('results.working')}</div>
           )}
 
-          {/* Travel Plan Response */}
-          {travelPlanResponse && (
-            <div className={`status-response ${travelPlanResponse.status === 'completed' ? 'status-success' : 
-                                              travelPlanResponse.status === 'failed' ? 'status-error' : 'status-processing'}`}>
-              <h3>
-                {travelPlanResponse.status === 'completed' && '✅ Travel Plan Completed!'}
-                {travelPlanResponse.status === 'failed' && '❌ Travel Plan Failed'}
-                {travelPlanResponse.status === 'processing' && '⏳ Processing...'}
-                {travelPlanResponse.status === 'pending' && '⏸️ Pending...'}
-              </h3>
-              <p><strong>Status:</strong> {travelPlanResponse.status}</p>
-              <p><strong>Message:</strong> {travelPlanResponse.message}</p>
-              <p><strong>Last Updated:</strong> {new Date().toLocaleString()}</p>
-              
-              {travelPlanResponse.status === 'completed' && renderTravelPlanDetails(travelPlanResponse)}
-            </div>
+          {itinerary && (
+            <>
+              <RouteMap days={itinerary.days} />
+              <Itinerary itinerary={itinerary} />
+            </>
           )}
 
-          {travelPlanError && (
-            <div className="status-error">
-              <h3>❌ Travel Plan Error</h3>
-              <p>{travelPlanError}</p>
-            </div>
+          {!itinerary && !polling && !error && plan?.status !== 'failed' && (
+            <p className="empty-hint">{t('results.empty')}</p>
           )}
         </section>
-      </header>
+      </main>
     </div>
   );
 }

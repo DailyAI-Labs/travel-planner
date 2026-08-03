@@ -1,0 +1,74 @@
+# Self-hosted geocoding (Photon) and routing (Valhalla).
+#
+# Together these remove every paid dependency from the planner. Both are open
+# source and cost nothing per request; you pay only for the machine they run
+# on.
+#
+#   docker compose up -d
+#
+# Then point the backend at them in backend/.env:
+#   GEOCODER=photon
+#   GEOCODER_DOMAIN=localhost:2322
+#   GEOCODER_MIN_DELAY=0
+#   MATRIX_PROVIDER=valhalla
+#   VALHALLA_URL=http://localhost:8002
+#
+# Both images are community-maintained rather than published by the upstream
+# projects. Check their documentation before relying on them; the README has
+# the manual route for each if you would rather not use a third-party image.
+#
+# First start is slow for both: Photon downloads a prebuilt search index and
+# Valhalla builds routing tiles from an OSM extract. Keep REGION and
+# PBF_URL pointing at the same area, and make sure that area covers
+# everywhere you want to plan trips: places outside it will not resolve, and
+# routes crossing the boundary will not be found.
+
+services:
+  photon:
+    image: rtuszik/photon-docker:latest
+    container_name: photon
+    restart: unless-stopped
+    ports:
+      - "2322:2322"
+    environment:
+      # Comma-separated country codes, or unset for the full planet.
+      REGION: ${PHOTON_REGION:-it}
+      UPDATE_STRATEGY: DISABLED
+    volumes:
+      - photon-data:/photon/photon_data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2322/api?q=roma"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15m
+
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    container_name: valhalla
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      # OSM extract to build routing tiles from. Geofabrik publishes these per
+      # country and region; pick the smallest one that covers your trips.
+      tile_urls: ${PBF_URL:-https://download.geofabrik.de/europe/italy-latest.osm.pbf}
+      # Reuse existing tiles across restarts instead of rebuilding every time.
+      use_tiles_ignore_pbf: "True"
+      force_rebuild: "False"
+      # Not needed for time/distance matrices; skipping keeps the build short.
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "True"
+    volumes:
+      - valhalla-tiles:/custom_files
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8002/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30m
+
+volumes:
+  photon-data:
+  valhalla-tiles:
