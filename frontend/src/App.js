@@ -19,9 +19,14 @@ const MAX_DAYS = 14;
 // woken, so refusals inside that window read as a cold start rather than as a
 // failure, and are retried briskly. Past it the badge says offline but the
 // asking continues, since the backend may well come back.
-const BACKEND_WAKE_TIMEOUT_MS = 150000;
+const BACKEND_WAKE_TIMEOUT_MS = 90000;
 const BACKEND_WAKE_RETRY_MS = 4000;
 const BACKEND_RETRY_MS = 15000;
+// A request that never settles would end the loop: nothing schedules the next
+// check, and the badge sits on whatever it last said for as long as the page
+// is open. A waking instance can hold a connection open well past the point of
+// being useful, so each probe is given a deadline of its own.
+const BACKEND_PROBE_TIMEOUT_MS = 20000;
 // While it is answering, often enough to notice it going away without
 // pestering it. Also, incidentally, often enough to hold off the idle
 // shutdown for as long as someone is actually looking at the page.
@@ -123,14 +128,21 @@ function App() {
       // visibility listener restarts the loop.
       if (document.hidden) return;
 
-      checkHealth().then(
+      // Abandoned rather than waited on: an abort surfaces as a rejection,
+      // which is the same "not answering" the retry already handles.
+      const probe = new AbortController();
+      const deadline = setTimeout(() => probe.abort(), BACKEND_PROBE_TIMEOUT_MS);
+
+      checkHealth({ signal: probe.signal }).then(
         () => {
+          clearTimeout(deadline);
           if (cancelled) return;
           failingSince = null;
           setBackendStatus('online');
           timer = setTimeout(check, BACKEND_POLL_MS);
         },
         () => {
+          clearTimeout(deadline);
           if (cancelled) return;
           if (failingSince === null) failingSince = Date.now();
 
