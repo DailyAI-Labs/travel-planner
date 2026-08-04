@@ -3,6 +3,7 @@ import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useI18n } from '../i18n';
+import { isLoop } from './format';
 
 // Distinct hues so overlapping days stay readable; reused cyclically beyond.
 export const DAY_COLOURS = [
@@ -46,14 +47,6 @@ function FitToRoute({ positions }) {
   }, [map, positions]);
 
   return null;
-}
-
-/** A day whose last stop repeats its first is a loop. */
-function isLoop(waypoints) {
-  if (waypoints.length < 2) return false;
-  const first = waypoints[0];
-  const last = waypoints[waypoints.length - 1];
-  return first.lat === last.lat && first.lon === last.lon;
 }
 
 function RouteMap({ days }) {

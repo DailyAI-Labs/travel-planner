@@ -824,7 +824,7 @@ def _extract_routes_from_solution(routing: RoutingModel,
     return routes, total_distance
 
 
-def _vehicle_note(modes: list[str]) -> str:
+def _vehicle_note(modes: list[str]) -> tuple[str, str]:
     """
     Explain a flagged leg in terms of what the traveller actually asked for:
     saying "too far to cycle" to someone planning a walk is noise.
@@ -838,15 +838,20 @@ def _vehicle_note(modes: list[str]) -> str:
 
     Returns
     -------
-    str
+    tuple[str, str]
         An English note naming the human-powered modes that were ruled out,
-        or a generic one when the traveller asked for neither.
+        and a stable code for it. The variants are enumerable, so the code
+        carries no parameters: 'too_far_to_walk', 'too_far_to_cycle',
+        'too_far_to_walk_or_cycle', or 'too_far_for_selected_mode' when the
+        traveller asked for neither.
     """
     verbs = {WALKING_MODE: 'walk', CYCLING_MODE: 'cycle'}
-    attempted = ' or '.join(verbs[mode] for mode in modes if mode in verbs)
+    attempted = [verbs[mode] for mode in modes if mode in verbs]
     if not attempted:
-        return 'Too far for the selected mode: take public transport or a car'
-    return f'Too far to {attempted}: take public transport or a car'
+        return ('Too far for the selected mode: take public transport or a car',
+                'too_far_for_selected_mode')
+    return (f"Too far to {' or '.join(attempted)}: take public transport or a car",
+            f"too_far_to_{'_or_'.join(attempted)}")
 
 
 def _build_route_response(
@@ -918,7 +923,8 @@ def _build_route_response(
                 day_distance += actual_distance
 
             requires_vehicle = vehicle_matrix[from_idx][to_idx]
-            vehicle_note = _vehicle_note(modes) if requires_vehicle else None
+            vehicle_note, vehicle_note_code = (
+                _vehicle_note(modes) if requires_vehicle else (None, None))
 
             route_details.append({
                 'from_place': places[from_idx].display_name,
@@ -926,6 +932,7 @@ def _build_route_response(
                 'mode': mode_used,
                 'requires_vehicle': requires_vehicle,
                 'note': vehicle_note,
+                'note_code': vehicle_note_code,
                 'travel_time_seconds': travel_time,
                 'distance_meters': actual_distance,
                 'estimated_arrival': day_start + timedelta(

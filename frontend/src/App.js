@@ -5,6 +5,7 @@ import { LANGUAGES, useI18n } from './i18n';
 import PlaceList, { nextPlaceId } from './components/PlaceList';
 import RouteMap from './components/RouteMap';
 import Itinerary from './components/Itinerary';
+import ExportMarkdownButton from './components/ExportMarkdownButton';
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_DAYS = 14;
@@ -499,7 +500,15 @@ function App() {
         </section>
 
         <section className="panel results">
-          <h2>{t('results.heading')}</h2>
+          <div className="results-header">
+            <h2>{t('results.heading')}</h2>
+            {itinerary && (
+              <ExportMarkdownButton
+                itinerary={itinerary}
+                area={committedArea}
+              />
+            )}
+          </div>
 
           {error && <div className="alert alert-error">{error}</div>}
 

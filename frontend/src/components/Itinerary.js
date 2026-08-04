@@ -1,38 +1,19 @@
 import React from 'react';
 import { useI18n } from '../i18n';
 import { dayColour } from './RouteMap';
+import {
+  describeLegNote,
+  formatDistance,
+  formatDuration,
+  formatTime,
+  isLoop,
+} from './format';
 
 const MODE_ICON = {
   walking: '🚶',
   bicycle: '🚲',
   driving: '🚗',
 };
-
-function formatDuration(seconds) {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours} h ${String(minutes % 60).padStart(2, '0')} min`;
-}
-
-function formatDistance(meters) {
-  return meters < 1000 ? `${meters} m` : `${(meters / 1000).toFixed(1)} km`;
-}
-
-function formatTime(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? '—'
-    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-/** A day whose last stop repeats its first is a loop. */
-function isLoop(waypoints) {
-  if (waypoints.length < 2) return false;
-  const first = waypoints[0];
-  const last = waypoints[waypoints.length - 1];
-  return first.lat === last.lat && first.lon === last.lon;
-}
 
 function DaySection({ day, dayIndex, showHeading }) {
   const { t } = useI18n();
@@ -59,6 +40,7 @@ function DaySection({ day, dayIndex, showHeading }) {
       <ol className="legs">
         {waypoints.map((point, index) => {
           const leg = legs[index];
+          const note = leg ? describeLegNote(leg, t) : null;
           // The return to the start is not an extra place to visit.
           const isReturn = loop && index === waypoints.length - 1;
           return (
@@ -90,7 +72,7 @@ function DaySection({ day, dayIndex, showHeading }) {
                       time: formatTime(leg.estimated_arrival),
                     })}
                   </span>
-                  {leg.note && <span className="leg-note">{leg.note}</span>}
+                  {note && <span className="leg-note">{note}</span>}
                 </div>
               )}
             </li>
