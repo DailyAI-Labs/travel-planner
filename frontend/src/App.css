@@ -69,16 +69,36 @@
   white-space: nowrap;
 }
 
-.health-true {
+.health-online {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: transparent;
 }
 
-.health-false {
+.health-offline {
   color: var(--danger);
   background: var(--danger-soft);
   border-color: transparent;
+}
+
+/* A sleeping backend takes the better part of a minute to answer, so the
+   pill has to look like it is waiting rather than like it has given up. */
+.health-waking {
+  background: var(--info-soft);
+  border-color: transparent;
+  animation: health-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes health-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .health-waking {
+    animation: none;
+  }
 }
 
 .layout {

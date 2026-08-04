@@ -415,6 +415,104 @@ test('the language selector shows the current language and switches on change', 
   expect(screen.getByText(/which city or region/i)).toBeInTheDocument();
 });
 
+test('a sleeping backend is waited out rather than declared offline', async () => {
+  // The retry gap is seconds long, so the clock is faked rather than waited
+  // out; testing-library advances it from inside waitFor.
+  jest.useFakeTimers();
+  try {
+    // What a spun-down free instance looks like: the first requests are
+    // refused outright, and one of them is what starts it.
+    let refusals = 3;
+    global.fetch = jest.fn(() => {
+      if (refusals > 0) {
+        refusals -= 1;
+        return Promise.reject(new TypeError('Failed to fetch'));
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ status: 'healthy' }),
+      });
+    });
+
+    renderApp();
+
+    expect(await screen.findByText(/waking the backend/i)).toBeInTheDocument();
+    expect(screen.queryByText(/backend offline/i)).not.toBeInTheDocument();
+
+    // Generous against the four-second gap, but it is fake time: waitFor
+    // winds the clock forward rather than sleeping.
+    await waitFor(
+      () => expect(screen.getByText(/backend online/i)).toBeInTheDocument(),
+      { timeout: 20000 }
+    );
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('a backend that comes back is noticed without reloading the page', async () => {
+  jest.useFakeTimers();
+  try {
+    let healthy = false;
+    global.fetch = jest.fn(() =>
+      healthy
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ status: 'healthy' }),
+          })
+        : Promise.reject(new TypeError('Failed to fetch'))
+    );
+
+    renderApp();
+
+    // Long enough failing that it is no longer a cold start. The coarse
+    // interval is what keeps winding two and a half minutes of fake clock
+    // forward from costing thousands of DOM queries.
+    await waitFor(
+      () => expect(screen.getByText(/backend offline/i)).toBeInTheDocument(),
+      { timeout: 200000, interval: 1000 }
+    );
+
+    // Offline is a report, not a verdict: the asking has to continue.
+    healthy = true;
+    await waitFor(
+      () => expect(screen.getByText(/backend online/i)).toBeInTheDocument(),
+      { timeout: 60000 }
+    );
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('a backend that goes away stops being reported as online', async () => {
+  jest.useFakeTimers();
+  try {
+    let healthy = true;
+    global.fetch = jest.fn(() =>
+      healthy
+        ? Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ status: 'healthy' }),
+          })
+        : Promise.reject(new TypeError('Failed to fetch'))
+    );
+
+    renderApp();
+    await waitFor(
+      () => expect(screen.getByText(/backend online/i)).toBeInTheDocument(),
+      { timeout: 20000 }
+    );
+
+    healthy = false;
+    await waitFor(
+      () => expect(screen.getByText(/waking the backend/i)).toBeInTheDocument(),
+      { timeout: 120000, interval: 1000 }
+    );
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('the chosen language survives a reload', async () => {
   const first = renderApp();
   fireEvent.change(
