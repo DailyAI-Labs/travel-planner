@@ -49,6 +49,12 @@ DAY_BALANCE_COEFFICIENT: int = 100
 # How long the solver is allowed to keep improving. See _solve_routing_problem.
 SOLVER_TIME_LIMIT_MS: int = 1000
 
+# Travel plus time spent at places, per day. Fixed rather than configurable:
+# 24 hours minus 8 asleep is a ceiling nobody needs to tune, and one less
+# number to fill in. It is a safety rail, not a target — days are still
+# balanced on travel time alone.
+DAILY_TIME_BUDGET_SECONDS: int = 16 * 60 * 60
+
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -167,7 +173,8 @@ def optimize_route(
     modes: list[str] = DEFAULT_MODES,
     walking_preference: bool = True,
     max_walking_distance: int = 1000,
-    max_cycling_distance: int = 5000
+    max_cycling_distance: int = 5000,
+    visit_seconds: list[int] | None = None
 ) -> dict[str, Any]:
     """
     Main function that runs the route optimization.
@@ -205,18 +212,30 @@ def optimize_route(
         Longest leg to walk, in meters, by default 1000.
     max_cycling_distance : int, optional
         Longest leg to cycle, in meters, by default 5000.
+    visit_seconds : list[int] | None, optional
+        Time spent at each place, one entry per place and in the same order.
+        By default None, meaning no time is spent anywhere. Places serving as
+        a daily start or end contribute nothing wherever they appear, since
+        depots are not stops.
 
     Returns
     -------
     dict[str, Any]
         On success, `success` True plus `days` (one plan per day),
-        `total_travel_time_seconds`, `total_distance_meters`, `start_time`
-        and `estimated_end_time`. On failure, `success` False plus `error`,
-        and for a distance refusal also `error_code` ('too_far_for_mode') and
-        `error_params`, so the UI can phrase it in its own language.
+        `total_travel_time_seconds`, `total_visit_time_seconds`,
+        `total_distance_meters`, `start_time` and `estimated_end_time`. On
+        failure, `success` False plus `error`, and for a refusal a user can
+        act on also `error_code` ('too_far_for_mode' or 'day_budget_exceeded')
+        and `error_params`, so the UI can phrase it in its own language.
     """
     if start_time is None:
         start_time = datetime.now()
+
+    if visit_seconds is not None:
+        # Cheap and certain: refuse before spending a matrix request.
+        refusal = _check_visit_budget(visit_seconds, day_starts, day_ends)
+        if refusal is not None:
+            return {'success': False, **refusal}
 
     print("Optimize route...")
     print("-" * 60)
@@ -250,7 +269,7 @@ def optimize_route(
 
     print("Solve routing problem...")
     route_solution = _solve_routing_problem(
-        best_time_matrix, day_starts, day_ends)
+        best_time_matrix, day_starts, day_ends, visit_seconds)
 
     if not route_solution['success']:
         return route_solution
@@ -259,20 +278,28 @@ def optimize_route(
     return _build_route_response(
         route_solution, places, best_time_matrix,
         best_mode_matrix, vehicle_matrix, distance_matrices, start_time,
-        modes
+        modes, visit_seconds
     )
 
 
 @log_time
 def _solve_routing_problem(time_matrix: list[list[int]],
                            start_indices: list[int],
-                           end_indices: list[int]) -> dict[str, Any]:
+                           end_indices: list[int],
+                           visit_seconds: list[int] | None = None
+                           ) -> dict[str, Any]:
     """
     Split the places across days and order each day, minimising total travel.
 
     One vehicle per day, each with its own start and end depot. Days may share
     a depot, which is how "leave from and return to the hotel every day" is
     expressed.
+
+    Time spent at places deliberately does not enter the objective. Every
+    place is visited exactly once, so the visit total is the same for every
+    ordering and cancels out; it would only shift which places share a day,
+    and days are balanced on travel time by design. It is capped instead: see
+    the 'DayTotal' dimension below.
 
     Blocks for SOLVER_TIME_LIMIT_MS (1 s), which is a runtime rather than a
     ceiling: guided local search keeps improving until the limit expires.
@@ -287,6 +314,9 @@ def _solve_routing_problem(time_matrix: list[list[int]],
         what determines the number of days.
     end_indices : list[int]
         Place index each day ends at, one entry per day.
+    visit_seconds : list[int] | None, optional
+        Time spent at each place, one entry per place. By default None,
+        meaning no time is spent anywhere and only travel is capped.
 
     Returns
     -------
@@ -296,10 +326,13 @@ def _solve_routing_problem(time_matrix: list[list[int]],
         `total_distance` — which despite its name holds the total travel
         **time in seconds**, because the arc cost evaluator is registered
         from the time matrix. No caller reads it. On failure, `success` False
-        and `error`.
+        and `error`, plus `error_code` 'day_budget_exceeded' when the cap is
+        the likely cause.
     """
     n_nodes = len(time_matrix)
     n_days = len(start_indices)
+    depots = set(start_indices) | set(end_indices)
+    visits = visit_seconds or [0] * n_nodes
 
     manager = pywrapcp.RoutingIndexManager(
         n_nodes, n_days, start_indices, end_indices)
@@ -314,6 +347,25 @@ def _solve_routing_problem(time_matrix: list[list[int]],
     transit_callback_index = routing.RegisterTransitCallback(
         travel_time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+
+    def total_time_callback(from_index: int, to_index: int) -> int:
+        """Travel to a node plus the time spent once there."""
+        from_node: int = manager.IndexToNode(from_index)
+        to_node: int = manager.IndexToNode(to_index)
+        # Depots are not stops, so no time is spent at them.
+        stay = 0 if to_node in depots else visits[to_node]
+        return time_matrix[from_node][to_node] + stay
+
+    # A hard cap, unlike the balancing above: a day physically cannot hold
+    # more than DAILY_TIME_BUDGET_SECONDS. Registered for every trip, not
+    # just multi-day ones, since a single day overflows just as easily.
+    total_callback_index = routing.RegisterTransitCallback(total_time_callback)
+    routing.AddDimension(
+        total_callback_index,
+        0,                          # no waiting between stops
+        DAILY_TIME_BUDGET_SECONDS,
+        True,                       # every day starts its clock at zero
+        'DayTotal')
 
     if n_days > 1:
         _balance_days_across_vehicles(routing, manager, transit_callback_index,
@@ -334,6 +386,22 @@ def _solve_routing_problem(time_matrix: list[list[int]],
     solution = routing.SolveWithParameters(search_parameters)
 
     if not solution:
+        # The cap is the only hard constraint that can make a well-formed
+        # request infeasible, so name it rather than blaming the solver.
+        if any(visits[node] for node in range(n_nodes) if node not in depots):
+            hours = DAILY_TIME_BUDGET_SECONDS // 3600
+            return {
+                'success': False,
+                'error': (f'These places do not fit in {n_days} day(s): '
+                          f'travel plus time spent at each place exceeds the '
+                          f'{hours} hours a day allows. Add days or shorten '
+                          f'the time at some places.'),
+                'error_code': 'day_budget_exceeded',
+                'error_params': {
+                    'days': n_days,
+                    'budget_hours': hours,
+                },
+            }
         return {
             'success': False,
             'error': ('No solution found - OR-Tools could not split these '
@@ -412,6 +480,60 @@ def _balance_days_across_vehicles(routing: RoutingModel,
     stop_count = routing.GetDimensionOrDie('StopCount')
     for vehicle in range(n_days):
         stop_count.CumulVar(routing.End(vehicle)).SetMin(1)
+
+
+def _check_visit_budget(visit_seconds: list[int],
+                        day_starts: list[int],
+                        day_ends: list[int]) -> dict[str, Any] | None:
+    """
+    Refuse a trip whose time at places alone cannot fit in the days allowed.
+
+    A necessary condition, checked before any matrix request: travel only
+    adds to the total, so a plan failing this could never have succeeded. The
+    solver enforces the same cap per day, but only after the network round
+    trips, and its refusal cannot say how many days would have worked.
+
+    Parameters
+    ----------
+    visit_seconds : list[int]
+        Time spent at each place, one entry per place.
+    day_starts : list[int]
+        Place index each day starts from, one entry per day.
+    day_ends : list[int]
+        Place index each day ends at, one entry per day.
+
+    Returns
+    -------
+    dict[str, Any] | None
+        A failure dict with `error`, `error_code` ('day_budget_exceeded') and
+        `error_params` carrying the hours needed, the hours available and the
+        smallest number of days that would fit, or None when the trip fits.
+    """
+    depots = set(day_starts) | set(day_ends)
+    needed = sum(seconds for node, seconds in enumerate(visit_seconds)
+                 if node not in depots)
+    n_days = len(day_starts)
+    available = n_days * DAILY_TIME_BUDGET_SECONDS
+    if needed <= available:
+        return None
+
+    budget_hours = DAILY_TIME_BUDGET_SECONDS // 3600
+    # Ceiling division: the last day may be part-used, but it is still a day.
+    minimum_days = -(-needed // DAILY_TIME_BUDGET_SECONDS)
+    return {
+        'error': (f'Time at these places adds up to {needed / 3600:.1f} h, '
+                  f'which does not fit in {n_days} day(s) of {budget_hours} h '
+                  f'— and that is before any travel. At least {minimum_days} '
+                  f'day(s) would be needed.'),
+        'error_code': 'day_budget_exceeded',
+        'error_params': {
+            'needed_hours': round(needed / 3600, 1),
+            'available_hours': available // 3600,
+            'days': n_days,
+            'budget_hours': budget_hours,
+            'minimum_days': minimum_days,
+        },
+    }
 
 
 def _straight_line_meters(a: Place, b: Place) -> float:
@@ -862,7 +984,8 @@ def _build_route_response(
     vehicle_matrix: list[list[bool]],
     distance_matrices: dict[str, list[list[int]]],
     start_time: datetime,
-    modes: list[str]
+    modes: list[str],
+    visit_seconds: list[int] | None = None
 ) -> dict[str, Any]:
     """Build the final detailed response, one entry per day.
 
@@ -896,19 +1019,36 @@ def _build_route_response(
         `ordered_places`, `waypoints`, `route_details`,
         `total_travel_time_seconds`, `total_distance_meters`, `start_time`
         and `estimated_end_time`), and the trip-wide
-        `total_travel_time_seconds`, `total_distance_meters`, `start_time`
-        and `estimated_end_time`. End times are start plus travel only: time
-        spent at a place is not modelled.
+        `total_travel_time_seconds`, `total_visit_time_seconds`,
+        `total_distance_meters`, `start_time` and `estimated_end_time`. End
+        times are start plus travel plus time spent at each place, so they
+        track the clock rather than just the walking.
     """
+    routes = route_solution['routes']
+    # Reconstructed rather than passed in, but identical to the set the solver
+    # used: a depot node is reserved by its vehicle and never appears mid-route.
+    depots = {r[0] for r in routes} | {r[-1] for r in routes}
+
+    def stay_at(node: int) -> int:
+        """Time spent at a place, or zero for a depot, which is not a stop."""
+        if visit_seconds is None or node in depots:
+            return 0
+        return visit_seconds[node]
+
     day_plans = []
     total_travel_time = 0
+    total_visit_time = 0
     total_actual_distance = 0
 
-    for day_number, route_idxs in enumerate(route_solution['routes'], start=1):
+    for day_number, route_idxs in enumerate(routes, start=1):
         day_start = start_time + timedelta(days=day_number - 1)
         route_details = []
         day_travel_time = 0
+        day_visit_time = 0
         day_distance = 0
+        # Wall-clock offset into the day: travel so far plus every visit
+        # already finished. Arrivals are read off this, not off travel alone.
+        elapsed = 0
 
         for i in range(len(route_idxs) - 1):
             from_idx = route_idxs[i]
@@ -916,6 +1056,11 @@ def _build_route_response(
             mode_used = best_mode_matrix[from_idx][to_idx]
             travel_time = best_time_matrix[from_idx][to_idx]
             day_travel_time += travel_time
+
+            # You leave a place only once you are done with it.
+            stay = stay_at(from_idx)
+            day_visit_time += stay
+            elapsed += stay + travel_time
 
             actual_distance = 0
             if mode_used in distance_matrices:
@@ -934,12 +1079,13 @@ def _build_route_response(
                 'note': vehicle_note,
                 'note_code': vehicle_note_code,
                 'travel_time_seconds': travel_time,
+                'visit_time_seconds': stay,
                 'distance_meters': actual_distance,
-                'estimated_arrival': day_start + timedelta(
-                    seconds=day_travel_time)
+                'estimated_arrival': day_start + timedelta(seconds=elapsed)
             })
 
         total_travel_time += day_travel_time
+        total_visit_time += day_visit_time
         total_actual_distance += day_distance
 
         day_plans.append({
@@ -947,19 +1093,21 @@ def _build_route_response(
             'ordered_places': [places[i].display_name for i in route_idxs],
             'waypoints': [{'name': places[i].display_name,
                            'lat': places[i].lat,
-                           'lon': places[i].lon} for i in route_idxs],
+                           'lon': places[i].lon,
+                           'visit_seconds': stay_at(i)} for i in route_idxs],
             'route_details': route_details,
             'total_travel_time_seconds': day_travel_time,
+            'total_visit_time_seconds': day_visit_time,
             'total_distance_meters': day_distance,
             'start_time': day_start,
-            'estimated_end_time': day_start + timedelta(
-                seconds=day_travel_time)
+            'estimated_end_time': day_start + timedelta(seconds=elapsed)
         })
 
     return {
         'success': True,
         'days': day_plans,
         'total_travel_time_seconds': total_travel_time,
+        'total_visit_time_seconds': total_visit_time,
         'total_distance_meters': total_actual_distance,
         'start_time': start_time,
         'estimated_end_time': (day_plans[-1]['estimated_end_time']

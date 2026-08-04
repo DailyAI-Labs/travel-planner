@@ -69,6 +69,10 @@ const STRINGS = {
     'error.tooFarWalking': '“{first}” and “{second}” are {km} km apart — too far to cover on foot. Try by car, or plan them as separate trips.',
     'error.tooFarBicycle': '“{first}” and “{second}” are {km} km apart — too far to cover by bike. Try by car, or plan them as separate trips.',
     'error.tooFarDriving': '“{first}” and “{second}” are {km} km apart — too far for a single trip. Plan them separately.',
+    'error.dayBudget':
+      'Time at these places adds up to {needed_hours} h, which does not fit in {days} day(s) of {budget_hours} h — and that is before any travel. Allow at least {minimum_days} day(s), or shorten some visits.',
+    'error.dayBudgetSolver':
+      'Travel plus time at these places does not fit in {days} day(s) of {budget_hours} h. Add a day, or shorten some visits.',
     'error.city': 'Enter the city or region.',
     'error.places': 'Add at least two places.',
     'error.daysTooMany':
@@ -91,6 +95,11 @@ const STRINGS = {
     'results.overLimitMany':
       '{count} stretches exceed your distance limit — their times assume a car.',
     'results.arrive': 'arrive {time}',
+    'results.stay': 'stay {duration}',
+    'results.visits': 'at places',
+    'form.visitTime': 'Time at {name}',
+    'form.visitTimeHint':
+      'Time at each place, next to its name — 45m, 1h30, 2h. Travel plus visits is capped at 16 h a day.',
 
     'map.caption':
       'Lines show the visit order as straight connections, not the actual streets taken. Red dashes mark stretches too far to walk or cycle.',
@@ -175,6 +184,10 @@ const STRINGS = {
     'error.tooFarWalking': '“{first}” e “{second}” distano {km} km: troppo per andarci a piedi. Prova in auto, oppure pianificali come viaggi separati.',
     'error.tooFarBicycle': '“{first}” e “{second}” distano {km} km: troppo per andarci in bici. Prova in auto, oppure pianificali come viaggi separati.',
     'error.tooFarDriving': '“{first}” e “{second}” distano {km} km: troppo per un unico viaggio. Pianificali separatamente.',
+    'error.dayBudget':
+      'Le soste nei luoghi sommano {needed_hours} h e non entrano in {days} giorno/i da {budget_hours} h, senza contare gli spostamenti. Serve almeno {minimum_days} giorno/i, oppure accorcia qualche sosta.',
+    'error.dayBudgetSolver':
+      'Spostamenti e soste non entrano in {days} giorno/i da {budget_hours} h. Aggiungi un giorno oppure accorcia qualche sosta.',
     'error.city': 'Inserisci la città o la regione.',
     'error.places': 'Aggiungi almeno due luoghi.',
     'error.daysTooMany':
@@ -197,6 +210,11 @@ const STRINGS = {
     'results.overLimitMany':
       '{count} tratte superano il tuo limite di distanza: i tempi indicati sono quelli in auto.',
     'results.arrive': 'arrivo {time}',
+    'results.stay': 'sosta {duration}',
+    'results.visits': 'nei luoghi',
+    'form.visitTime': 'Tempo a {name}',
+    'form.visitTimeHint':
+      'Tempo in ogni luogo, accanto al nome — 45m, 1h30, 2h. Spostamenti e soste insieme non superano le 16 h al giorno.',
 
     'map.caption':
       'Le linee mostrano l’ordine di visita come collegamenti diretti, non le strade reali. I tratteggi rossi segnano le tratte troppo lunghe per piedi o bici.',

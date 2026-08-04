@@ -44,6 +44,10 @@ export function itineraryToMarkdown(itinerary, { area, t }) {
     `${formatDuration(itinerary.total_travel_time_seconds)} ${t('results.time')}`,
     `${formatDistance(itinerary.total_distance_meters)} ${t('results.distance')}`,
   ];
+  if (itinerary.total_visit_time_seconds) {
+    totals.splice(2, 0, `${formatDuration(itinerary.total_visit_time_seconds)} `
+      + `${t('results.visits')}`);
+  }
   if (multiDay) {
     totals.splice(1, 0, `${days.length} ${t('results.days')}`);
   } else {
@@ -70,11 +74,16 @@ export function itineraryToMarkdown(itinerary, { area, t }) {
     waypoints.forEach((point, index) => {
       // The return to the start is not an extra place to visit.
       const isReturn = loop && index === waypoints.length - 1;
-      lines.push(
-        isReturn
-          ? `- ↩ ${t('results.backTo', { name: point.name })}`
-          : `${index + 1}. **${point.name}**`
-      );
+      if (isReturn) {
+        lines.push(`- ↩ ${t('results.backTo', { name: point.name })}`);
+      } else {
+        const stay = point.visit_seconds
+          ? ` — _${t('results.stay', {
+              duration: formatDuration(point.visit_seconds),
+            })}_`
+          : '';
+        lines.push(`${index + 1}. **${point.name}**${stay}`);
+      }
 
       const leg = legs[index];
       if (!leg) return;

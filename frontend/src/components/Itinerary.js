@@ -56,6 +56,13 @@ function DaySection({ day, dayIndex, showHeading }) {
                 <span className="leg-place">
                   {isReturn ? t('results.backTo', { name: point.name }) : point.name}
                 </span>
+                {!isReturn && point.visit_seconds > 0 && (
+                  <span className="leg-stay">
+                    {t('results.stay', {
+                      duration: formatDuration(point.visit_seconds),
+                    })}
+                  </span>
+                )}
               </div>
 
               {leg && (
@@ -120,6 +127,14 @@ function Itinerary({ itinerary }) {
           </span>
           <span className="summary-label">{t('results.time')}</span>
         </div>
+        {itinerary.total_visit_time_seconds > 0 && (
+          <div className="summary-item">
+            <span className="summary-value">
+              {formatDuration(itinerary.total_visit_time_seconds)}
+            </span>
+            <span className="summary-label">{t('results.visits')}</span>
+          </div>
+        )}
         <div className="summary-item">
           <span className="summary-value">
             {formatDistance(itinerary.total_distance_meters)}

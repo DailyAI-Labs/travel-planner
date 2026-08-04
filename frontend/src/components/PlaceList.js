@@ -1,11 +1,59 @@
 import React, { useState } from 'react';
 import { useI18n } from '../i18n';
 import BatchAddDialog from './BatchAddDialog';
+import { formatDuration, parseDuration } from './duration';
 
 // Ids need only be unique within a session, and crypto.randomUUID is missing
 // outside secure contexts — such as serving this app over plain HTTP on a LAN.
 let idCounter = 0;
 export const nextPlaceId = () => `place-${++idCounter}`;
+
+/**
+ * How long to spend at one place.
+ *
+ * Holds the raw text while it is being typed and only commits on blur or
+ * Enter, so a half-finished "1h3" is never parsed as something the traveller
+ * did not mean. Unparseable text stays on screen to be corrected in place.
+ */
+function VisitTimeInput({ minutes, onCommit, disabled, ariaLabel }) {
+  const [text, setText] = useState(() => formatDuration(minutes));
+  const [invalid, setInvalid] = useState(false);
+
+  const commit = () => {
+    const parsed = parseDuration(text);
+    if (parsed === null && text.trim()) {
+      setInvalid(true);
+      return;
+    }
+    const next = parsed ?? 0;
+    setInvalid(false);
+    setText(formatDuration(next));
+    onCommit(next);
+  };
+
+  return (
+    <input
+      type="text"
+      className={`visit-time${invalid ? ' visit-time-invalid' : ''}`}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+        setInvalid(false);
+      }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        // Inside the planning form, so Enter must not submit the plan.
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        commit();
+      }}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      aria-invalid={invalid ? 'true' : undefined}
+      placeholder="1h"
+    />
+  );
+}
 
 /**
  * Collects the places to visit, one at a time, showing what the geocoder
@@ -50,6 +98,14 @@ function PlaceList({ places, onChange, onAdd, disabled, needsArea }) {
 
   const removePlace = (id) => {
     onChange(places.filter((place) => place.id !== id));
+  };
+
+  const setVisitMinutes = (id, minutes) => {
+    onChange(
+      places.map((place) =>
+        place.id === id ? { ...place, visitMinutes: minutes } : place
+      )
+    );
   };
 
   const movePlace = (index, delta) => {
@@ -135,6 +191,12 @@ function PlaceList({ places, onChange, onAdd, disabled, needsArea }) {
                     </small>
                   )}
                 </span>
+                <VisitTimeInput
+                  minutes={place.visitMinutes ?? 0}
+                  onCommit={(minutes) => setVisitMinutes(place.id, minutes)}
+                  disabled={disabled}
+                  ariaLabel={t('form.visitTime', { name: place.name })}
+                />
                 <span className="place-actions">
                   <button
                     type="button"

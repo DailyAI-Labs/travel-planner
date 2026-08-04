@@ -102,7 +102,8 @@ async def compute_itinerary_async(request: TravelPlanRequest, code: str) -> None
             days=request.days,
             day_starts=request.day_starts,
             day_ends=request.day_ends,
-            resolved_places=_to_places(request.resolved_places)
+            resolved_places=_to_places(request.resolved_places),
+            visit_seconds=request.visit_seconds
         )
 
         if not itinerary.get("success"):

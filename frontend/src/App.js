@@ -6,6 +6,7 @@ import PlaceList, { nextPlaceId } from './components/PlaceList';
 import RouteMap from './components/RouteMap';
 import Itinerary from './components/Itinerary';
 import ExportMarkdownButton from './components/ExportMarkdownButton';
+import { DEFAULT_VISIT_MINUTES } from './components/duration';
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_DAYS = 14;
@@ -39,6 +40,14 @@ const TOO_FAR_KEY = {
 function describeFailure(plan, t) {
   if (plan.error_code === 'too_far_for_mode' && plan.error_params) {
     const key = TOO_FAR_KEY[plan.error_params.mode] || TOO_FAR_KEY.driving;
+    return t(key, plan.error_params);
+  }
+  if (plan.error_code === 'day_budget_exceeded' && plan.error_params) {
+    // Only the pre-solve check can work out how many days would have fit; the
+    // solver's own refusal knows the cap was hit but not by how much.
+    const key = plan.error_params.minimum_days
+      ? 'error.dayBudget'
+      : 'error.dayBudgetSolver';
     return t(key, plan.error_params);
   }
   return plan.error || t('results.failed');
@@ -105,6 +114,7 @@ function App() {
         resolvedFor: committedArea,
         resolved: result.place,
         error: null,
+        visitMinutes: DEFAULT_VISIT_MINUTES,
       },
     ]);
     return { ok: true };
@@ -246,6 +256,7 @@ function App() {
           lat: place.resolved.lat,
           lon: place.resolved.lon,
         })),
+        visit_seconds: places.map((place) => (place.visitMinutes ?? 0) * 60),
         area: committedArea,
         days,
         start_idx: dayStarts[0],
@@ -350,6 +361,7 @@ function App() {
                 disabled={polling}
                 needsArea={!areaLocked}
               />
+              {places.length > 0 && <small>{t('form.visitTimeHint')}</small>}
             </div>
 
             <fieldset className="field">
