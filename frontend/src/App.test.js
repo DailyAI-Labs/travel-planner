@@ -517,6 +517,36 @@ test('a health check that never answers is abandoned and tried again', async () 
   }
 });
 
+test('a tab hidden at the wrong moment does not freeze the badge', async () => {
+  jest.useFakeTimers();
+  const visibility = jest
+    .spyOn(document, 'hidden', 'get')
+    .mockReturnValue(true);
+  try {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ status: 'healthy' }),
+      })
+    );
+
+    renderApp();
+    // Hidden: no request is worth making, and none is made.
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // Looked at again, but without the visibility event ever arriving - the
+    // loop has to have kept its own tick alive to recover from this.
+    visibility.mockReturnValue(false);
+    await waitFor(
+      () => expect(screen.getByText(/backend online/i)).toBeInTheDocument(),
+      { timeout: 120000, interval: 1000 }
+    );
+  } finally {
+    visibility.mockRestore();
+    jest.useRealTimers();
+  }
+});
+
 test('a backend that goes away stops being reported as online', async () => {
   jest.useFakeTimers();
   try {
