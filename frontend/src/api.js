@@ -27,8 +27,9 @@ async function request(path, options) {
   return response.json();
 }
 
-export function checkHealth() {
-  return request('/health');
+/** Takes `options` so the caller can hand in an abort signal to time it out. */
+export function checkHealth(options) {
+  return request('/health', options);
 }
 
 /**

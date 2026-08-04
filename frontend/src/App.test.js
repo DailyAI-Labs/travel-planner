@@ -484,6 +484,39 @@ test('a backend that comes back is noticed without reloading the page', async ()
   }
 });
 
+test('a health check that never answers is abandoned and tried again', async () => {
+  jest.useFakeTimers();
+  try {
+    // The failure mode with no timeout of its own: a connection held open
+    // rather than refused. Nothing settles, so nothing schedules the next
+    // check, and the badge would sit on "waking" for as long as the page is
+    // open. The mock only gives up when the abort signal says so.
+    let hang = true;
+    global.fetch = jest.fn(
+      (url, options) =>
+        new Promise((resolve, reject) => {
+          if (hang) {
+            options?.signal?.addEventListener('abort', () =>
+              reject(new Error('aborted'))
+            );
+            return;
+          }
+          resolve({ ok: true, json: () => Promise.resolve({ status: 'healthy' }) });
+        })
+    );
+
+    renderApp();
+    hang = false;
+
+    await waitFor(
+      () => expect(screen.getByText(/backend online/i)).toBeInTheDocument(),
+      { timeout: 60000, interval: 1000 }
+    );
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test('a backend that goes away stops being reported as online', async () => {
   jest.useFakeTimers();
   try {
