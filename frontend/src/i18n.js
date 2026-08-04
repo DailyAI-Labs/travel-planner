@@ -95,6 +95,20 @@ const STRINGS = {
     'map.caption':
       'Lines show the visit order as straight connections, not the actual streets taken. Red dashes mark stretches too far to walk or cycle.',
     'map.startFinish': 'start and finish',
+
+    'note.too_far_to_walk':
+      'Too far to walk: take public transport or a car',
+    'note.too_far_to_cycle':
+      'Too far to cycle: take public transport or a car',
+    'note.too_far_to_walk_or_cycle':
+      'Too far to walk or cycle: take public transport or a car',
+    'note.too_far_for_selected_mode':
+      'Too far for the selected mode: take public transport or a car',
+
+    'export.button': 'Export Markdown',
+    'export.heading': 'Itinerary — {area}',
+    'export.headingNoArea': 'Itinerary',
+    'export.failed': 'Could not save the file.',
   },
 
   it: {
@@ -187,6 +201,20 @@ const STRINGS = {
     'map.caption':
       'Le linee mostrano l’ordine di visita come collegamenti diretti, non le strade reali. I tratteggi rossi segnano le tratte troppo lunghe per piedi o bici.',
     'map.startFinish': 'partenza e arrivo',
+
+    'note.too_far_to_walk':
+      'Troppo lontano a piedi: prendi i mezzi pubblici o l’auto',
+    'note.too_far_to_cycle':
+      'Troppo lontano in bici: prendi i mezzi pubblici o l’auto',
+    'note.too_far_to_walk_or_cycle':
+      'Troppo lontano a piedi o in bici: prendi i mezzi pubblici o l’auto',
+    'note.too_far_for_selected_mode':
+      'Troppo lontano per il mezzo scelto: prendi i mezzi pubblici o l’auto',
+
+    'export.button': 'Esporta Markdown',
+    'export.heading': 'Itinerario — {area}',
+    'export.headingNoArea': 'Itinerario',
+    'export.failed': 'Impossibile salvare il file.',
   },
 };
 

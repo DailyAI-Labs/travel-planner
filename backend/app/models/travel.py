@@ -105,6 +105,13 @@ class RouteDetail(BaseModel):
     mode: str
     requires_vehicle: bool = False
     note: str | None = None
+    note_code: str | None = Field(
+        default=None,
+        description=(
+            "Stable identifier for `note`, e.g. 'too_far_to_walk', so a client "
+            "can phrase it itself. `note` is the English fallback."
+        ),
+    )
     travel_time_seconds: int
     distance_meters: int
     estimated_arrival: datetime
