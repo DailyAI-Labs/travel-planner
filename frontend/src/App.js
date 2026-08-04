@@ -6,6 +6,7 @@ import PlaceList, { nextPlaceId } from './components/PlaceList';
 import RouteMap from './components/RouteMap';
 import Itinerary from './components/Itinerary';
 import ExportMarkdownButton from './components/ExportMarkdownButton';
+import ExportPdfButton from './components/ExportPdfButton';
 import { DEFAULT_VISIT_MINUTES } from './components/duration';
 
 const POLL_INTERVAL_MS = 2000;
@@ -515,10 +516,13 @@ function App() {
           <div className="results-header">
             <h2>{t('results.heading')}</h2>
             {itinerary && (
-              <ExportMarkdownButton
-                itinerary={itinerary}
-                area={committedArea}
-              />
+              <span className="export-bar">
+                <ExportMarkdownButton
+                  itinerary={itinerary}
+                  area={committedArea}
+                />
+                <ExportPdfButton itinerary={itinerary} area={committedArea} />
+              </span>
             )}
           </div>
 

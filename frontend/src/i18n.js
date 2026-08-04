@@ -118,6 +118,13 @@ const STRINGS = {
     'export.heading': 'Itinerary — {area}',
     'export.headingNoArea': 'Itinerary',
     'export.failed': 'Could not save the file.',
+
+    'pdf.button': 'Export PDF',
+    'pdf.generating': 'Preparing…',
+    'pdf.generated': 'Generated {date}',
+    'pdf.mapCredit': '© OpenStreetMap contributors',
+    'pdf.continued': '(continued)',
+    'pdf.page': 'Page {page} of {total}',
   },
 
   it: {
@@ -233,6 +240,13 @@ const STRINGS = {
     'export.heading': 'Itinerario — {area}',
     'export.headingNoArea': 'Itinerario',
     'export.failed': 'Impossibile salvare il file.',
+
+    'pdf.button': 'Esporta PDF',
+    'pdf.generating': 'Preparazione…',
+    'pdf.generated': 'Generato il {date}',
+    'pdf.mapCredit': '© OpenStreetMap contributors',
+    'pdf.continued': '(segue)',
+    'pdf.page': 'Pagina {page} di {total}',
   },
 };
 

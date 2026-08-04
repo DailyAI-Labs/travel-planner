@@ -109,12 +109,21 @@
   flex-wrap: wrap;
 }
 
-.export-actions {
+.export-bar,
+.export-actions,
+.export-action {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
 }
 
+/* Wraps rather than pushing the heading around on a narrow screen. */
+.export-bar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.export-bar button,
 .export-actions button {
   font-size: 0.82rem;
   padding: 0.3rem 0.6rem;
