@@ -28,10 +28,7 @@ from app.services.itinerary import (
 )
 from fastapi import APIRouter, HTTPException
 
-router = APIRouter(
-    prefix="/api/v1",
-    tags=["travel_planner"]
-)
+router = APIRouter(prefix="/api/v1", tags=["travel_planner"])
 
 
 @router.post("/geocode", response_model=GeocodeResponse)
@@ -69,7 +66,7 @@ async def geocode_single_place(request: GeocodeRequest) -> GeocodeResponse:
 
     try:
         resolved = await resolve_place(request.place, request.area)
-    except Exception as e:  # noqa: BLE001 - any geocoder failure is reported, not raised
+    except Exception as e:  # noqa: BLE001 - geocoder failures are reported, not raised
         return GeocodeResponse(found=False, query=request.place, error=str(e))
 
     if resolved is None:
@@ -82,9 +79,7 @@ async def geocode_single_place(request: GeocodeRequest) -> GeocodeResponse:
     return GeocodeResponse(
         found=True,
         query=request.place,
-        place=Waypoint(name=resolved.display_name,
-                       lat=resolved.lat,
-                       lon=resolved.lon),
+        place=Waypoint(name=resolved.display_name, lat=resolved.lat, lon=resolved.lon),
     )
 
 
@@ -93,7 +88,7 @@ async def post_travel_plan_request(request: TravelPlanRequest) -> TravelPlanStat
     """
     Submit a travel request and get a code to retrieve the computed itinerary.
     The computation runs asynchronously in the background.
-    
+
     - **places**: List of place names to visit
     - **area**: Optional city or region the places belong to (e.g. "London").
       Strongly recommended: it disambiguates landmark names that are otherwise
@@ -129,20 +124,21 @@ async def post_travel_plan_request(request: TravelPlanRequest) -> TravelPlanStat
         return TravelPlanStatus(
             code=code,
             status="pending",
-            message="Itinerary computation started. Use the code to check progress."
+            message="Itinerary computation started. Use the code to check progress.",
         )
     except Exception as e:  # noqa: BLE001 - any start-up failure becomes a 500
         raise HTTPException(
-            status_code=500, detail=f"Error starting computation: {e!s}")
+            status_code=500, detail=f"Error starting computation: {e!s}"
+        )
 
 
 @router.get("/travel_plan/{code}", response_model=TravelPlanResponse)
 async def get_travel_plan_by_code(code: str) -> TravelPlanResponse:
     """
     Retrieve a computed travel plan using its code.
-    
+
     - **code**: The unique code returned when submitting the travel request
-    
+
     Status can be:
     - **pending**: Computation not started yet
     - **processing**: Computation in progress
@@ -178,7 +174,7 @@ async def get_travel_plan_by_code(code: str) -> TravelPlanResponse:
 async def delete_travel_plan_endpoint(code: str) -> dict[str, str]:
     """
     Delete a travel plan (optional cleanup endpoint).
-    
+
     - **code**: The unique code of the travel plan to delete
 
     Parameters
@@ -204,15 +200,14 @@ async def delete_travel_plan_endpoint(code: str) -> dict[str, str]:
     if success:
         return {"message": "Travel plan deleted successfully"}
     else:
-        raise HTTPException(
-            status_code=500, detail="Failed to delete travel plan")
+        raise HTTPException(status_code=500, detail="Failed to delete travel plan")
 
 
 @router.get("/travel_plan/{code}/status")
 async def get_travel_plan_status(code: str) -> dict[str, Any]:
     """
     Get just the status of a travel plan computation.
-    
+
     - **code**: The unique code of the travel plan
 
     Cheaper to poll than the full plan, which carries the whole itinerary.
@@ -242,7 +237,7 @@ async def get_travel_plan_status(code: str) -> dict[str, Any]:
         "code": code,
         "status": plan["status"],
         "updated_at": plan["updated_at"],
-        "error": plan.get("error")
+        "error": plan.get("error"),
     }
 
 
@@ -250,7 +245,7 @@ async def get_travel_plan_status(code: str) -> dict[str, Any]:
 async def get_all_travel_plans_statuses() -> dict[str, str | list[str]]:
     """
     Get the status of all travel plan computations.
-    
+
     Returns a list of all travel plans with their current status.
 
     Returns
@@ -264,7 +259,5 @@ async def get_all_travel_plans_statuses() -> dict[str, str | list[str]]:
 
     if not all_plans:
         return {"message": "No travel plans found", "plans": []}
-    
+
     return {"codes": list(all_plans.keys())}
-
-

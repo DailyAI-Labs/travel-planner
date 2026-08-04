@@ -21,38 +21,38 @@ from app.services.geocoding import Place
 # avoids such an arc, small enough to stay well inside OR-Tools' int64 range.
 INFINITE_VAL: int = 999999
 
-DEFAULT_PROVIDER: str = 'valhalla'
-DEFAULT_VALHALLA_URL: str = 'http://localhost:8002'
+DEFAULT_PROVIDER: str = "valhalla"
+DEFAULT_VALHALLA_URL: str = "http://localhost:8002"
 DEFAULT_TIMEOUT_SECONDS: int = 120
 
 # Canonical mode names used across the app, mapped to each engine's own name.
 VALHALLA_COSTING: dict[str, str] = {
-    'driving': 'auto',
-    'walking': 'pedestrian',
-    'bicycle': 'bicycle',
+    "driving": "auto",
+    "walking": "pedestrian",
+    "bicycle": "bicycle",
 }
 
 GOOGLE_MODES: dict[str, str] = {
-    'driving': 'driving',
-    'walking': 'walking',
-    'bicycle': 'bicycling',
-    'transit': 'transit',
+    "driving": "driving",
+    "walking": "walking",
+    "bicycle": "bicycling",
+    "transit": "transit",
 }
 
 SUPPORTED_MODES: tuple[str, ...] = tuple(VALHALLA_COSTING)
 
-WALKING_MODE: str = 'walking'
-CYCLING_MODE: str = 'bicycle'
+WALKING_MODE: str = "walking"
+CYCLING_MODE: str = "bicycle"
 
 # Legs too long to walk or cycle are costed with this mode and reported as
 # requiring a vehicle — the same Valhalla instance serves it, at no extra cost.
-VEHICLE_FALLBACK_MODE: str = 'driving'
+VEHICLE_FALLBACK_MODE: str = "driving"
 
 _METERS_PER_UNIT: dict[str, float] = {
-    'kilometers': 1000.0,
-    'km': 1000.0,
-    'miles': 1609.344,
-    'mi': 1609.344,
+    "kilometers": 1000.0,
+    "km": 1000.0,
+    "miles": 1609.344,
+    "mi": 1609.344,
 }
 
 
@@ -74,11 +74,12 @@ class MatrixProvider(Protocol):
 
     name: str
 
-    def travel_matrix(self,
-                      places: list[Place],
-                      mode: str,
-                      start_time: datetime,
-                      ) -> tuple[list[list[int]], list[list[int]]]:
+    def travel_matrix(
+        self,
+        places: list[Place],
+        mode: str,
+        start_time: datetime,
+    ) -> tuple[list[list[int]], list[list[int]]]:
         """
         Return (time_matrix in seconds, distance_matrix in meters).
 
@@ -124,11 +125,13 @@ class ValhallaMatrixProvider:
     numbers are free-flow estimates.
     """
 
-    name = 'valhalla'
+    name = "valhalla"
 
-    def __init__(self,
-                 base_url: str = DEFAULT_VALHALLA_URL,
-                 timeout: int = DEFAULT_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        base_url: str = DEFAULT_VALHALLA_URL,
+        timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
         """Point the provider at a Valhalla instance.
 
         Parameters
@@ -140,14 +143,15 @@ class ValhallaMatrixProvider:
             Seconds to wait for one matrix request, by default 120. A large
             matrix on a cold instance genuinely takes that long.
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
-    def travel_matrix(self,
-                      places: list[Place],
-                      mode: str,
-                      start_time: datetime,
-                      ) -> tuple[list[list[int]], list[list[int]]]:
+    def travel_matrix(
+        self,
+        places: list[Place],
+        mode: str,
+        start_time: datetime,
+    ) -> tuple[list[list[int]], list[list[int]]]:
         """Fetch the full matrix in one `sources_to_targets` call.
 
         Blocks on an HTTP request for up to `self.timeout` seconds.
@@ -183,14 +187,14 @@ class ValhallaMatrixProvider:
         if costing is None:
             raise UnsupportedModeError(_unsupported_mode_message(mode))
 
-        locations = [{'lat': place.lat, 'lon': place.lon} for place in places]
+        locations = [{"lat": place.lat, "lon": place.lon} for place in places]
         response = requests.post(
             f"{self.base_url}/sources_to_targets",
             json={
-                'sources': locations,
-                'targets': locations,
-                'costing': costing,
-                'units': 'kilometers',
+                "sources": locations,
+                "targets": locations,
+                "costing": costing,
+                "units": "kilometers",
             },
             timeout=self.timeout,
         )
@@ -228,11 +232,9 @@ class GoogleMatrixProvider:
     live traffic and public transport, and the only one that is billed.
     """
 
-    name = 'google'
+    name = "google"
 
-    def __init__(self,
-                 api_key: str | None = None,
-                 batch_size: int = 10) -> None:
+    def __init__(self, api_key: str | None = None, batch_size: int = 10) -> None:
         """Configure access to the Distance Matrix API.
 
         Parameters
@@ -250,17 +252,17 @@ class GoogleMatrixProvider:
         ValueError
             If no key is given and GCP_API_KEY is unset or empty.
         """
-        self.api_key = api_key or os.getenv('GCP_API_KEY')
+        self.api_key = api_key or os.getenv("GCP_API_KEY")
         if not self.api_key:
-            raise ValueError(
-                "Google matrices require an API key (set GCP_API_KEY)")
+            raise ValueError("Google matrices require an API key (set GCP_API_KEY)")
         self.batch_size = batch_size
 
-    def travel_matrix(self,
-                      places: list[Place],
-                      mode: str,
-                      start_time: datetime,
-                      ) -> tuple[list[list[int]], list[list[int]]]:
+    def travel_matrix(
+        self,
+        places: list[Place],
+        mode: str,
+        start_time: datetime,
+    ) -> tuple[list[list[int]], list[list[int]]]:
         """Assemble the matrix from batched Distance Matrix requests.
 
         Blocks on one HTTP request per block of `batch_size` origins by
@@ -309,12 +311,19 @@ class GoogleMatrixProvider:
                 origin_end = min(origin_start + self.batch_size, n_places)
                 dest_end = min(dest_start + self.batch_size, n_places)
 
-                print(f"Processing batch: origins {origin_start}-{origin_end-1}, "
-                      f"destinations {dest_start}-{dest_end-1}")
+                print(
+                    f"Processing batch: origins {origin_start}-{origin_end-1}, "
+                    f"destinations {dest_start}-{dest_end-1}"
+                )
 
-                result = gmaps.distance_matrix(**_google_params(
-                    places[origin_start:origin_end], places[dest_start:dest_end],
-                    google_mode, start_time))
+                result = gmaps.distance_matrix(
+                    **_google_params(
+                        places[origin_start:origin_end],
+                        places[dest_start:dest_end],
+                        google_mode,
+                        start_time,
+                    )
+                )
                 batch_time, batch_dist = _parse_google_response(result)
 
                 # The batch is indexed from zero; the matrices are not.
@@ -349,14 +358,16 @@ def _describe_valhalla_error(response: requests.Response) -> str:
     """
     try:
         body = response.json()
-        message = body.get('error') or body.get('message')
+        message = body.get("error") or body.get("message")
     except ValueError:
         message = None
 
     if message:
         return f"The routing engine rejected the request: {message}"
-    return (f"The routing engine returned HTTP {response.status_code} "
-            f"with no explanation")
+    return (
+        f"The routing engine returned HTTP {response.status_code} "
+        f"with no explanation"
+    )
 
 
 def _unsupported_mode_message(mode: str) -> str:
@@ -374,20 +385,23 @@ def _unsupported_mode_message(mode: str) -> str:
         wording, because the answer is not "no such mode" but "not without
         per-city GTFS tiles, or a billed Google key".
     """
-    if mode == 'transit':
+    if mode == "transit":
         return (
             "Public transport is not available with the open source routing "
             "engine: it needs GTFS transit tiles built per city. Supported "
             f"modes are {', '.join(SUPPORTED_MODES)}. Set "
             "MATRIX_PROVIDER=google (billed) if you need transit."
         )
-    return (f"Unsupported transport mode '{mode}'. "
-            f"Expected one of: {', '.join(SUPPORTED_MODES)}.")
+    return (
+        f"Unsupported transport mode '{mode}'. "
+        f"Expected one of: {', '.join(SUPPORTED_MODES)}."
+    )
 
 
-def _parse_valhalla_response(payload: dict[str, Any],
-                             n_places: int,
-                             ) -> tuple[list[list[int]], list[list[int]]]:
+def _parse_valhalla_response(
+    payload: dict[str, Any],
+    n_places: int,
+) -> tuple[list[list[int]], list[list[int]]]:
     """
     Turn Valhalla's sources_to_targets payload into dense matrices.
 
@@ -414,11 +428,11 @@ def _parse_valhalla_response(payload: dict[str, Any],
     ValueError
         If the payload has no 'sources_to_targets' key.
     """
-    rows = payload.get('sources_to_targets')
+    rows = payload.get("sources_to_targets")
     if rows is None:
         raise ValueError(f"Unexpected Valhalla response: {payload}")
 
-    to_meters = _METERS_PER_UNIT.get(payload.get('units', 'kilometers'), 1000.0)
+    to_meters = _METERS_PER_UNIT.get(payload.get("units", "kilometers"), 1000.0)
 
     time_matrix = [[INFINITE_VAL] * n_places for _ in range(n_places)]
     dist_matrix = [[INFINITE_VAL] * n_places for _ in range(n_places)]
@@ -426,10 +440,10 @@ def _parse_valhalla_response(payload: dict[str, Any],
     for row_idx, row in enumerate(rows):
         for col_idx, entry in enumerate(row):
             # Valhalla echoes the indices back; trust them over position.
-            i = entry.get('from_index', row_idx)
-            j = entry.get('to_index', col_idx)
-            travel_time = entry.get('time')
-            distance = entry.get('distance')
+            i = entry.get("from_index", row_idx)
+            j = entry.get("to_index", col_idx)
+            travel_time = entry.get("time")
+            distance = entry.get("distance")
             if travel_time is None or distance is None:
                 continue
             time_matrix[i][j] = round(travel_time)
@@ -438,10 +452,9 @@ def _parse_valhalla_response(payload: dict[str, Any],
     return time_matrix, dist_matrix
 
 
-def _google_params(origins: list[Place],
-                   destinations: list[Place],
-                   mode: str,
-                   start_time: datetime) -> dict[str, Any]:
+def _google_params(
+    origins: list[Place], destinations: list[Place], mode: str, start_time: datetime
+) -> dict[str, Any]:
     """Build Distance Matrix parameters for a transport mode.
 
     Parameters
@@ -464,25 +477,26 @@ def _google_params(origins: list[Place],
         coordinates rather than address strings so nothing is re-geocoded.
     """
     params: dict[str, Any] = {
-        'origins': [place.coords for place in origins],
-        'destinations': [place.coords for place in destinations],
-        'mode': mode,
+        "origins": [place.coords for place in origins],
+        "destinations": [place.coords for place in destinations],
+        "mode": mode,
     }
 
-    if mode in ('driving', 'transit'):
-        params['departure_time'] = start_time
+    if mode in ("driving", "transit"):
+        params["departure_time"] = start_time
 
-    if mode == 'driving':
-        params['traffic_model'] = 'best_guess'
-    elif mode == 'transit':
-        params['transit_mode'] = ['bus', 'subway', 'train', 'tram', 'rail']
-        params['transit_routing_preference'] = 'less_walking'
+    if mode == "driving":
+        params["traffic_model"] = "best_guess"
+    elif mode == "transit":
+        params["transit_mode"] = ["bus", "subway", "train", "tram", "rail"]
+        params["transit_routing_preference"] = "less_walking"
 
     return params
 
 
-def _parse_google_response(result: dict[str, Any],
-                           ) -> tuple[list[list[int]], list[list[int]]]:
+def _parse_google_response(
+    result: dict[str, Any],
+) -> tuple[list[list[int]], list[list[int]]]:
     """Parse a Distance Matrix response into time and distance matrices.
 
     Parameters
@@ -500,13 +514,13 @@ def _parse_google_response(result: dict[str, Any],
     time_matrix = []
     dist_matrix = []
 
-    for row in result['rows']:
+    for row in result["rows"]:
         time_row = []
         dist_row = []
-        for element in row['elements']:
-            if element['status'] == 'OK':
-                time_row.append(element['duration']['value'])
-                dist_row.append(element['distance']['value'])
+        for element in row["elements"]:
+            if element["status"] == "OK":
+                time_row.append(element["duration"]["value"])
+                dist_row.append(element["distance"]["value"])
             else:
                 time_row.append(INFINITE_VAL)
                 dist_row.append(INFINITE_VAL)
@@ -542,14 +556,15 @@ def get_matrix_provider(provider: str | None = None) -> MatrixProvider:
         If the name is neither 'valhalla' nor 'google', or — for 'google' —
         if no API key is configured.
     """
-    provider = (provider or os.getenv('MATRIX_PROVIDER')
-                or DEFAULT_PROVIDER).lower()
+    provider = (provider or os.getenv("MATRIX_PROVIDER") or DEFAULT_PROVIDER).lower()
 
-    if provider == 'valhalla':
+    if provider == "valhalla":
         return ValhallaMatrixProvider(
-            base_url=os.getenv('VALHALLA_URL', DEFAULT_VALHALLA_URL))
-    if provider == 'google':
+            base_url=os.getenv("VALHALLA_URL", DEFAULT_VALHALLA_URL)
+        )
+    if provider == "google":
         return GoogleMatrixProvider()
 
     raise ValueError(
-        f"Unknown matrix provider '{provider}'. Expected: valhalla, google.")
+        f"Unknown matrix provider '{provider}'. Expected: valhalla, google."
+    )
