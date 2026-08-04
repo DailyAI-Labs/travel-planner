@@ -58,7 +58,8 @@ class TravelPlanner:
         days: int = 1,
         day_starts: list[int] | None = None,
         day_ends: list[int] | None = None,
-        resolved_places: list[Place] | None = None
+        resolved_places: list[Place] | None = None,
+        visit_seconds: list[int] | None = None
     ) -> dict[str, Any]:
         """
         Plan route: validate places first, then optimize route.
@@ -113,16 +114,21 @@ class TravelPlanner:
             Places already geocoded by the caller, in the same order as
             `places` and of the same length, by default None. When given,
             geocoding is skipped entirely.
+        visit_seconds : list[int] | None, optional
+            Time spent at each place, one entry per place and of the same
+            length, by default None, meaning a travel-only plan. Travel plus
+            visits is capped at DAILY_TIME_BUDGET_SECONDS per day.
 
         Returns
         -------
         dict[str, Any]
             On success, the itinerary from `optimize_route`: `success` True
             plus `days`, `total_travel_time_seconds`,
-            `total_distance_meters`, `start_time` and `estimated_end_time`.
-            On failure, `success` False plus `error`, and depending on the
-            cause `error_code`/`error_params` (a user-actionable failure such
-            as 'too_far_for_mode') or `validation_result` (the dict from
+            `total_visit_time_seconds`, `total_distance_meters`, `start_time`
+            and `estimated_end_time`. On failure, `success` False plus
+            `error`, and depending on the cause `error_code`/`error_params` (a
+            user-actionable failure such as 'too_far_for_mode' or
+            'day_budget_exceeded') or `validation_result` (the dict from
             `validate_places`, when a place name could not be resolved).
         """
         n_places = len(places)
@@ -135,6 +141,13 @@ class TravelPlanner:
         error = self._validate_day_plan(n_places, days, starts, ends)
         if error:
             return {'success': False, 'error': error}
+
+        if visit_seconds is not None and len(visit_seconds) != n_places:
+            return {
+                'success': False,
+                'error': (f"visit_seconds must match places: got "
+                          f"{len(visit_seconds)} for {n_places} places")
+            }
 
         print("=" * 60)
         print("ROUTE OPTIMIZATION WITH VALIDATION")
@@ -169,7 +182,8 @@ class TravelPlanner:
             modes,
             walking_preference,
             max_walking_distance,
-            max_cycling_distance
+            max_cycling_distance,
+            visit_seconds
         )
 
         return result

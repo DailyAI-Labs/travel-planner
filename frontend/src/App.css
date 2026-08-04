@@ -355,6 +355,20 @@ button.danger {
   border-color: var(--danger);
 }
 
+/* Narrow on purpose: it holds "1h30" at most, and the place name matters more. */
+.visit-time {
+  flex: 0 0 4.2rem;
+  width: 4.2rem;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.visit-time-invalid {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .place-actions {
   display: flex;
   gap: 0.2rem;
@@ -542,6 +556,14 @@ button.danger {
 .leg-place {
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.leg-stay {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .leg-travel {

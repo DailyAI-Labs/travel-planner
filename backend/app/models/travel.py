@@ -65,6 +65,15 @@ class TravelPlanRequest(BaseModel):
             "end_idx every day. A day whose start and end match is a round trip."
         ),
     )
+    visit_seconds: list[int] | None = Field(
+        default=None,
+        description=(
+            "Time spent at each place, one entry per entry in `places` and in "
+            "the same order. Omit for a travel-only plan. A place serving as a "
+            "daily start or end contributes nothing, since depots are not "
+            "stops. Travel plus visits is capped at 16 hours per day."
+        ),
+    )
     start_time: datetime
     modes: list[str]
     walking_preference: bool
@@ -113,6 +122,13 @@ class RouteDetail(BaseModel):
         ),
     )
     travel_time_seconds: int
+    visit_time_seconds: int = Field(
+        default=0,
+        description=(
+            "Time spent at `from_place` before this leg departs. Zero for a "
+            "daily start or end point."
+        ),
+    )
     distance_meters: int
     estimated_arrival: datetime
 
@@ -122,6 +138,7 @@ class Waypoint(BaseModel):
     name: str
     lat: float
     lon: float
+    visit_seconds: int = 0
 
 
 class GeocodeRequest(BaseModel):
@@ -148,6 +165,7 @@ class DayPlan(BaseModel):
     waypoints: list[Waypoint] = []
     route_details: list[RouteDetail]
     total_travel_time_seconds: int
+    total_visit_time_seconds: int = 0
     total_distance_meters: int
     start_time: datetime
     estimated_end_time: datetime
@@ -157,10 +175,12 @@ class Itinerary(BaseModel):
     """A completed plan: every day in order, plus trip-wide totals.
 
     The totals sum the per-day figures, in seconds and meters respectively.
+    End times account for time spent at places as well as travel.
     """
     success: bool
     days: list[DayPlan]
     total_travel_time_seconds: int
+    total_visit_time_seconds: int = 0
     total_distance_meters: int
     start_time: datetime
     estimated_end_time: datetime
