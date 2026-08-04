@@ -1,3 +1,4 @@
+import { itineraryFilename } from './filename';
 import {
   describeLegNote,
   formatDistance,
@@ -107,19 +108,5 @@ export function itineraryToMarkdown(itinerary, { area, t }) {
 
 /** `Rome` on 2026-08-04 becomes `itinerary-rome-2026-08-04.md`. */
 export function markdownFilename(area, now = new Date()) {
-  // Decompose first so "Zürich" slugs to "zurich" rather than "z-rich".
-  const slug = (area || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  // Local parts, not toISOString: east of UTC that stamps yesterday's date
-  // on anything exported after midnight.
-  const date = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-  ].join('-');
-  return slug ? `itinerary-${slug}-${date}.md` : `itinerary-${date}.md`;
+  return itineraryFilename(area, 'md', now);
 }

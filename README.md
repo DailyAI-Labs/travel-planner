@@ -338,9 +338,24 @@ too-far-to-walk notes, plus the trip totals. The file is named after the city
 and the day it was exported — `itinerary-london-2026-08-04.md` — and is written
 in whichever language the interface is set to.
 
-It runs entirely in the browser. The plan is already in memory once it has been
-computed, so there is nothing to ask the backend for and nothing leaves the
-page.
+**Export PDF** saves the same plan as an A4 document: a summary of the totals,
+the map, then the days as a numbered timeline. The map is not a screenshot of
+the one on the page — the tiles are fetched again and redrawn around the whole
+trip, so the image is framed on the route no matter where the map happens to
+be panned, and it is drawn at print resolution rather than screen resolution.
+Text is real text, so the file stays searchable and sharp at any zoom.
+
+Both run entirely in the browser. The plan is already in memory once it has
+been computed, so there is nothing to ask the backend for and nothing leaves
+the page, beyond the map tiles the PDF export fetches from the same public
+endpoint the live map uses.
+
+Two limits worth knowing about the PDF. It uses the standard PDF fonts, which
+cover Latin scripts: an accented name comes out as itself, `Ōsaka` loses its
+macron, and a name in a script with no Latin fallback comes out as `?`.
+Embedding a Unicode font would add hundreds of kilobytes to every page load.
+And if a tile does not arrive the map keeps its route and numbers but loses
+that square of background, rather than failing the export.
 
 ## API reference
 
