@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
+// The lettering out of the org logo. The whole composition — globe, plane,
+// suitcase, strapline — is unreadable at the size a header gives it.
+import logoMark from './logo-dai-mark.png';
 import { checkHealth, fetchItinerary, geocodePlace, submitItinerary } from './api';
 import { LANGUAGES, useI18n } from './i18n';
 import PlaceList, { nextPlaceId } from './components/PlaceList';
@@ -358,13 +361,22 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div>
-          <h1>{t('app.title')}</h1>
-          <p className="tagline">
-            {t('app.tagline1')}
-            <br />
-            {t('app.tagline2')}
-          </p>
+        <div className="brand">
+          <img
+            className="brand-mark"
+            src={logoMark}
+            alt="dAI Labs"
+            width="48"
+            height="48"
+          />
+          <div>
+            <h1>{t('app.title')}</h1>
+            <p className="tagline">
+              {t('app.tagline1')}
+              <br />
+              {t('app.tagline2')}
+            </p>
+          </div>
         </div>
         <div className="header-actions">
           <select

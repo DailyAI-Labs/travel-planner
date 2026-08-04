@@ -42,6 +42,23 @@
   margin-bottom: 1.5rem;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+/* The mark carries the logo's own pale backdrop, so it is given an edge to
+   sit on rather than bleeding into the page — and in dark mode it reads as a
+   deliberate light chip instead of a stray bright rectangle. */
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
 .app-header h1 {
   margin: 0;
   font-size: 1.6rem;
