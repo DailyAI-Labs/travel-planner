@@ -46,10 +46,10 @@ services:
 
   # --- Frontend -------------------------------------------------------------
   # Static sites are always on, so only the API pays the free plan's spin-down.
+  # No region here: they are served from Render's CDN rather than one place.
   - type: web
     name: dai-travel-planner-web
     runtime: static
-    region: frankfurt
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./build
