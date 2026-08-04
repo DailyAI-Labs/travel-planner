@@ -24,10 +24,11 @@ class TravelPlanner:
     event loop must go through `asyncio.to_thread`.
     """
 
-    def __init__(self,
-                 geocoder: GeocodingProvider | None = None,
-                 matrix_provider: MatrixProvider | None = None,
-                 ) -> None:
+    def __init__(
+        self,
+        geocoder: GeocodingProvider | None = None,
+        matrix_provider: MatrixProvider | None = None,
+    ) -> None:
         """Build a planner, loading `.env` before consulting the factories.
 
         Parameters
@@ -41,8 +42,9 @@ class TravelPlanner:
         """
         load_dotenv()
         self.geocoder = geocoder if geocoder is not None else get_geocoder()
-        self.matrix_provider = (matrix_provider if matrix_provider is not None
-                                else get_matrix_provider())
+        self.matrix_provider = (
+            matrix_provider if matrix_provider is not None else get_matrix_provider()
+        )
 
     def plan_route(
         self,
@@ -59,7 +61,7 @@ class TravelPlanner:
         day_starts: list[int] | None = None,
         day_ends: list[int] | None = None,
         resolved_places: list[Place] | None = None,
-        visit_seconds: list[int] | None = None
+        visit_seconds: list[int] | None = None,
     ) -> dict[str, Any]:
         """
         Plan route: validate places first, then optimize route.
@@ -140,13 +142,15 @@ class TravelPlanner:
 
         error = self._validate_day_plan(n_places, days, starts, ends)
         if error:
-            return {'success': False, 'error': error}
+            return {"success": False, "error": error}
 
         if visit_seconds is not None and len(visit_seconds) != n_places:
             return {
-                'success': False,
-                'error': (f"visit_seconds must match places: got "
-                          f"{len(visit_seconds)} for {n_places} places")
+                "success": False,
+                "error": (
+                    f"visit_seconds must match places: got "
+                    f"{len(visit_seconds)} for {n_places} places"
+                ),
             }
 
         print("=" * 60)
@@ -156,40 +160,43 @@ class TravelPlanner:
         if resolved_places is not None:
             if len(resolved_places) != n_places:
                 return {
-                    'success': False,
-                    'error': (f"resolved_places must match places: got "
-                              f"{len(resolved_places)} for {n_places} places")
+                    "success": False,
+                    "error": (
+                        f"resolved_places must match places: got "
+                        f"{len(resolved_places)} for {n_places} places"
+                    ),
                 }
             print(f"Using {n_places} pre-resolved places, skipping geocoding")
             valid_places = resolved_places
         else:
             validation_result = validate_places(places, self.geocoder, area)
 
-            if not validation_result['is_valid']:
+            if not validation_result["is_valid"]:
                 return {
-                    'success': False,
-                    'error': 'Place validation failed',
-                    'validation_result': validation_result
+                    "success": False,
+                    "error": "Place validation failed",
+                    "validation_result": validation_result,
                 }
-            valid_places = validation_result['valid_places']
+            valid_places = validation_result["valid_places"]
 
         result = optimize_route(
             valid_places,
             starts,
             ends,
             self.matrix_provider,
-            start_time if start_time else datetime.now(),
+            # Naive local wall-clock on purpose, matching the caller's own
+            # naive start_time; see optimize_route.
+            start_time if start_time else datetime.now(),  # noqa: DTZ005
             modes,
             walking_preference,
             max_walking_distance,
             max_cycling_distance,
-            visit_seconds
+            visit_seconds,
         )
 
         return result
 
-    def resolve_place(self, place: str, area: str | None = None
-                      ) -> Place | None:
+    def resolve_place(self, place: str, area: str | None = None) -> Place | None:
         """
         Resolve a single place name, for validating input as it is entered.
 
@@ -213,10 +220,9 @@ class TravelPlanner:
         return self.geocoder.geocode(place, area)
 
     @staticmethod
-    def _validate_day_plan(n_places: int,
-                           days: int,
-                           starts: list[int],
-                           ends: list[int]) -> str | None:
+    def _validate_day_plan(
+        n_places: int, days: int, starts: list[int], ends: list[int]
+    ) -> str | None:
         """Return a readable reason the trip cannot be planned, or None.
 
         Parameters
@@ -243,23 +249,29 @@ class TravelPlanner:
         if days < 1:
             return f"days must be at least 1, got {days}"
         if len(starts) != days or len(ends) != days:
-            return (f"Expected {days} start and end places, got "
-                    f"{len(starts)} and {len(ends)}")
+            return (
+                f"Expected {days} start and end places, got "
+                f"{len(starts)} and {len(ends)}"
+            )
 
-        for label, indices in (('start', starts), ('end', ends)):
+        for label, indices in (("start", starts), ("end", ends)):
             for day, index in enumerate(indices, start=1):
                 if index < 0 or index >= n_places:
-                    return (f"Day {day} {label} place is out of range: "
-                            f"expected 0..{n_places - 1}, got {index}")
+                    return (
+                        f"Day {day} {label} place is out of range: "
+                        f"expected 0..{n_places - 1}, got {index}"
+                    )
 
         # Depots are not stops: a day ending elsewhere is already a journey,
         # but a day looping back shows nothing without a place of its own.
         loop_days = sum(1 for s, e in zip(starts, ends) if s == e)
         free_places = n_places - len(set(starts) | set(ends))
         if free_places < loop_days:
-            return (f"Not enough places: {loop_days} day(s) return to their "
-                    f"starting point and need a place to visit in between, but "
-                    f"only {free_places} remain once every daily start and end "
-                    f"point is set. Add more places or reduce the number of days")
+            return (
+                f"Not enough places: {loop_days} day(s) return to their "
+                f"starting point and need a place to visit in between, but "
+                f"only {free_places} remain once every daily start and end "
+                f"point is set. Add more places or reduce the number of days"
+            )
 
         return None

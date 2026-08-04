@@ -25,19 +25,20 @@ from geopy.geocoders import (  # type: ignore[import-untyped]
     Photon,
 )
 
-DEFAULT_PROVIDER: str = 'photon'
-DEFAULT_USER_AGENT: str = 'travel-planner'
+DEFAULT_PROVIDER: str = "photon"
+DEFAULT_USER_AGENT: str = "travel-planner"
 DEFAULT_MIN_DELAY_SECONDS: float = 1.0
 DEFAULT_TIMEOUT_SECONDS: int = 10
 
-_PARENTHETICAL = re.compile(r'\(([^)]*)\)')
+_PARENTHETICAL = re.compile(r"\(([^)]*)\)")
 
 
 @dataclass(frozen=True)
 class Place:
     """A place name resolved to coordinates by a geocoding provider."""
-    query: str          # what the user originally typed
-    display_name: str   # normalized name returned by the provider
+
+    query: str  # what the user originally typed
+    display_name: str  # normalized name returned by the provider
     lat: float
     lon: float
 
@@ -92,8 +93,8 @@ def build_queries(place: str, area: str | None = None) -> list[str]:
     place = place.strip()
     variants: list[str] = []
 
-    outside = _PARENTHETICAL.sub(' ', place)
-    outside = re.sub(r'\s+', ' ', outside).strip(' ,')
+    outside = _PARENTHETICAL.sub(" ", place)
+    outside = re.sub(r"\s+", " ", outside).strip(" ,")
     inside = [m.strip() for m in _PARENTHETICAL.findall(place) if m.strip()]
 
     if outside:
@@ -144,11 +145,11 @@ class _GeopyProvider:
     limit: set GEOCODER_MIN_DELAY=0.
     """
 
-    name = 'geopy'
+    name = "geopy"
 
-    def __init__(self,
-                 geolocator: Any,
-                 min_delay_seconds: float = DEFAULT_MIN_DELAY_SECONDS) -> None:
+    def __init__(
+        self, geolocator: Any, min_delay_seconds: float = DEFAULT_MIN_DELAY_SECONDS
+    ) -> None:
         """Wrap a geopy geocoder in a rate limiter.
 
         Parameters
@@ -192,7 +193,8 @@ class _GeopyProvider:
         """
         for query in build_queries(place, area):
             location = self._geocode(
-                query, exactly_one=True, timeout=DEFAULT_TIMEOUT_SECONDS)
+                query, exactly_one=True, timeout=DEFAULT_TIMEOUT_SECONDS
+            )
             if location is not None:
                 return Place(
                     query=place,
@@ -212,13 +214,15 @@ class PhotonGeocoder(_GeopyProvider):
     our test set when given an `area`.
     """
 
-    name = 'photon'
+    name = "photon"
 
-    def __init__(self,
-                 domain: str = 'photon.komoot.io',
-                 scheme: str | None = None,
-                 user_agent: str = DEFAULT_USER_AGENT,
-                 min_delay_seconds: float = DEFAULT_MIN_DELAY_SECONDS):
+    def __init__(
+        self,
+        domain: str = "photon.komoot.io",
+        scheme: str | None = None,
+        user_agent: str = DEFAULT_USER_AGENT,
+        min_delay_seconds: float = DEFAULT_MIN_DELAY_SECONDS,
+    ):
         """Build a Photon geocoder.
 
         Parameters
@@ -236,8 +240,11 @@ class PhotonGeocoder(_GeopyProvider):
             Minimum seconds between requests, by default 1.0.
         """
         super().__init__(
-            Photon(domain=domain, scheme=scheme or _scheme_for(domain),
-                   user_agent=user_agent),
+            Photon(
+                domain=domain,
+                scheme=scheme or _scheme_for(domain),
+                user_agent=user_agent,
+            ),
             min_delay_seconds,
         )
 
@@ -250,13 +257,15 @@ class NominatimGeocoder(_GeopyProvider):
     and a full OSM import. The public endpoint forbids bulk querying.
     """
 
-    name = 'nominatim'
+    name = "nominatim"
 
-    def __init__(self,
-                 domain: str = 'nominatim.openstreetmap.org',
-                 scheme: str | None = None,
-                 user_agent: str = DEFAULT_USER_AGENT,
-                 min_delay_seconds: float = DEFAULT_MIN_DELAY_SECONDS):
+    def __init__(
+        self,
+        domain: str = "nominatim.openstreetmap.org",
+        scheme: str | None = None,
+        user_agent: str = DEFAULT_USER_AGENT,
+        min_delay_seconds: float = DEFAULT_MIN_DELAY_SECONDS,
+    ):
         """Build a Nominatim geocoder.
 
         Parameters
@@ -275,8 +284,11 @@ class NominatimGeocoder(_GeopyProvider):
             the public instance's usage policy asks for.
         """
         super().__init__(
-            Nominatim(domain=domain, scheme=scheme or _scheme_for(domain),
-                      user_agent=user_agent),
+            Nominatim(
+                domain=domain,
+                scheme=scheme or _scheme_for(domain),
+                user_agent=user_agent,
+            ),
             min_delay_seconds,
         )
 
@@ -284,11 +296,9 @@ class NominatimGeocoder(_GeopyProvider):
 class GoogleGeocoder(_GeopyProvider):
     """Google Geocoding API. Kept for comparison; requires a billable API key."""
 
-    name = 'google'
+    name = "google"
 
-    def __init__(self,
-                 api_key: str | None = None,
-                 min_delay_seconds: float = 0.0):
+    def __init__(self, api_key: str | None = None, min_delay_seconds: float = 0.0):
         """Build a Google geocoder.
 
         Parameters
@@ -305,17 +315,16 @@ class GoogleGeocoder(_GeopyProvider):
         ValueError
             If no key is given and GCP_API_KEY is unset or empty.
         """
-        api_key = api_key or os.getenv('GCP_API_KEY')
+        api_key = api_key or os.getenv("GCP_API_KEY")
         if not api_key:
-            raise ValueError(
-                "Google geocoding requires an API key (set GCP_API_KEY)")
+            raise ValueError("Google geocoding requires an API key (set GCP_API_KEY)")
         super().__init__(GoogleV3(api_key=api_key), min_delay_seconds)
 
 
 class ChainedGeocoder:
     """Tries each provider in order and returns the first match."""
 
-    name = 'chained'
+    name = "chained"
 
     def __init__(self, providers: list[GeocodingProvider]):
         """Chain several providers into one.
@@ -334,7 +343,7 @@ class ChainedGeocoder:
         if not providers:
             raise ValueError("ChainedGeocoder needs at least one provider")
         self._providers = providers
-        self.name = '+'.join(p.name for p in providers)
+        self.name = "+".join(p.name for p in providers)
 
     def geocode(self, place: str, area: str | None = None) -> Place | None:
         """Ask each provider in turn and return the first match.
@@ -386,8 +395,10 @@ def _scheme_for(domain: str) -> str:
     str
         'http' for a known local or container hostname, 'https' otherwise.
     """
-    host = domain.split(':')[0]
-    return 'http' if host in ('localhost', '127.0.0.1', 'photon', 'nominatim') else 'https'
+    host = domain.split(":")[0]
+    return (
+        "http" if host in ("localhost", "127.0.0.1", "photon", "nominatim") else "https"
+    )
 
 
 def get_geocoder(provider: str | None = None) -> GeocodingProvider:
@@ -421,24 +432,24 @@ def get_geocoder(provider: str | None = None) -> GeocodingProvider:
         If the setting is present but names no provider, or names one that
         does not exist.
     """
-    provider = (provider or os.getenv('GEOCODER') or DEFAULT_PROVIDER).lower()
-    user_agent = os.getenv('GEOCODER_USER_AGENT', DEFAULT_USER_AGENT)
-    min_delay = float(os.getenv('GEOCODER_MIN_DELAY', DEFAULT_MIN_DELAY_SECONDS))
-    domain = os.getenv('GEOCODER_DOMAIN')
+    provider = (provider or os.getenv("GEOCODER") or DEFAULT_PROVIDER).lower()
+    user_agent = os.getenv("GEOCODER_USER_AGENT", DEFAULT_USER_AGENT)
+    min_delay = float(os.getenv("GEOCODER_MIN_DELAY", DEFAULT_MIN_DELAY_SECONDS))
+    domain = os.getenv("GEOCODER_DOMAIN")
 
-    names = [name.strip() for name in provider.split('+') if name.strip()]
+    names = [name.strip() for name in provider.split("+") if name.strip()]
     if not names:
         raise ValueError("GEOCODER is set but empty")
     if len(names) > 1:
-        return ChainedGeocoder([_build_one(name, user_agent, min_delay, None)
-                                for name in names])
+        return ChainedGeocoder(
+            [_build_one(name, user_agent, min_delay, None) for name in names]
+        )
     return _build_one(names[0], user_agent, min_delay, domain)
 
 
-def _build_one(name: str,
-               user_agent: str,
-               min_delay: float,
-               domain: str | None) -> GeocodingProvider:
+def _build_one(
+    name: str, user_agent: str, min_delay: float, domain: str | None
+) -> GeocodingProvider:
     """Instantiate a single provider by name.
 
     Parameters
@@ -464,17 +475,20 @@ def _build_one(name: str,
     ValueError
         If `name` is not one of the three known providers.
     """
-    if name == 'photon':
-        kwargs = {'domain': domain} if domain else {}
-        return PhotonGeocoder(user_agent=user_agent,
-                              min_delay_seconds=min_delay, **kwargs)
-    if name == 'nominatim':
-        kwargs = {'domain': domain} if domain else {}
-        return NominatimGeocoder(user_agent=user_agent,
-                                 min_delay_seconds=min_delay, **kwargs)
-    if name == 'google':
+    if name == "photon":
+        kwargs = {"domain": domain} if domain else {}
+        return PhotonGeocoder(
+            user_agent=user_agent, min_delay_seconds=min_delay, **kwargs
+        )
+    if name == "nominatim":
+        kwargs = {"domain": domain} if domain else {}
+        return NominatimGeocoder(
+            user_agent=user_agent, min_delay_seconds=min_delay, **kwargs
+        )
+    if name == "google":
         return GoogleGeocoder()
 
     raise ValueError(
         f"Unknown geocoding provider '{name}'. "
-        f"Expected one of: photon, nominatim, google.")
+        f"Expected one of: photon, nominatim, google."
+    )

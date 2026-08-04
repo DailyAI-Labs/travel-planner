@@ -7,7 +7,7 @@ health check.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.routers.travel import router as travel_router
 from fastapi import FastAPI
@@ -23,7 +23,7 @@ CORS_ORIGINS = [
 app = FastAPI(
     title="Travel Planner API",
     description="Backend service for optimizing travel itineraries",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.add_middleware(
@@ -35,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(travel_router)
+
 
 # response_model=None keeps the return annotation from turning into a declared
 # response schema, which these two endpoints never had.
@@ -53,8 +54,9 @@ async def root() -> dict[str, str]:
         "message": "Travel Planner API",
         "version": "1.0.0",
         "docs": "/docs",
-        "redoc": "/redoc"
+        "redoc": "/redoc",
     }
+
 
 @app.get("/health", response_model=None)
 async def health_check() -> dict[str, str]:
@@ -67,7 +69,6 @@ async def health_check() -> dict[str, str]:
     Returns
     -------
     dict[str, str]
-        Keys `status` (always "healthy") and `timestamp` (ISO 8601, local
-        time).
+        Keys `status` (always "healthy") and `timestamp` (ISO 8601, UTC).
     """
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}

@@ -36,9 +36,9 @@ from ortools.constraint_solver import (  # type: ignore[import-untyped]
 
 # Aliases for the untyped OR-Tools objects, so signatures still say what they
 # take even though the checker cannot verify it.
-RoutingModel = Any        # pywrapcp.RoutingModel
+RoutingModel = Any  # pywrapcp.RoutingModel
 RoutingIndexManager = Any  # pywrapcp.RoutingIndexManager
-Assignment = Any          # pywrapcp.Assignment, the solver's answer
+Assignment = Any  # pywrapcp.Assignment, the solver's answer
 
 DEFAULT_MODES: list[str] = [WALKING_MODE, CYCLING_MODE, VEHICLE_FALLBACK_MODE]
 
@@ -79,6 +79,7 @@ def log_time(func: Callable[_P, _R]) -> Callable[_P, _R]:
         whatever it returned. Note that `functools.wraps` is not applied, so
         the wrapper does not carry the original name or docstring.
     """
+
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         """Time one call to the decorated function and print the result."""
         start_time = time.time()
@@ -87,14 +88,14 @@ def log_time(func: Callable[_P, _R]) -> Callable[_P, _R]:
         elapsed_time = end_time - start_time
         print(f"Execution time of {func.__name__}: {elapsed_time:.4f} seconds")
         return result
+
     return wrapper
 
 
 @log_time
-def validate_places(places: list[str],
-                    geocoder: GeocodingProvider,
-                    area: str | None = None
-                    ) -> dict[str, Any]:
+def validate_places(
+    places: list[str], geocoder: GeocodingProvider, area: str | None = None
+) -> dict[str, Any]:
     """
     Resolve place names to coordinates using the configured geocoding provider.
 
@@ -138,19 +139,13 @@ def validate_places(places: list[str],
                 print(f"    → {resolved.display_name}")
                 print(f"    → {resolved.lat:.5f}, {resolved.lon:.5f}")
             else:
-                invalid_places.append({
-                    'index': i,
-                    'place': place,
-                    'error': 'No geocoding results found'
-                })
+                invalid_places.append(
+                    {"index": i, "place": place, "error": "No geocoding results found"}
+                )
                 print(f"KO [{i}] {place} - No results found")
 
         except Exception as e:  # noqa: BLE001 - one bad place must not sink the batch
-            invalid_places.append({
-                'index': i,
-                'place': place,
-                'error': str(e)
-            })
+            invalid_places.append({"index": i, "place": place, "error": str(e)})
             print(f"KO [{i}] {place} - Error: {e}")
 
     print("-" * 60)
@@ -158,9 +153,9 @@ def validate_places(places: list[str],
     is_valid = len(invalid_places) == 0
 
     return {
-        'is_valid': is_valid,
-        'valid_places': valid_places,
-        'invalid_places': invalid_places
+        "is_valid": is_valid,
+        "valid_places": valid_places,
+        "invalid_places": invalid_places,
     }
 
 
@@ -174,7 +169,7 @@ def optimize_route(
     walking_preference: bool = True,
     max_walking_distance: int = 1000,
     max_cycling_distance: int = 5000,
-    visit_seconds: list[int] | None = None
+    visit_seconds: list[int] | None = None,
 ) -> dict[str, Any]:
     """
     Main function that runs the route optimization.
@@ -229,13 +224,15 @@ def optimize_route(
         and `error_params`, so the UI can phrase it in its own language.
     """
     if start_time is None:
-        start_time = datetime.now()
+        # Naive local wall-clock on purpose: this is the time the traveller
+        # sets off, and it is added to naive per-day starts/ends downstream.
+        start_time = datetime.now()  # noqa: DTZ005
 
     if visit_seconds is not None:
         # Cheap and certain: refuse before spending a matrix request.
         refusal = _check_visit_budget(visit_seconds, day_starts, day_ends)
         if refusal is not None:
-            return {'success': False, **refusal}
+            return {"success": False, **refusal}
 
     print("Optimize route...")
     print("-" * 60)
@@ -252,42 +249,52 @@ def optimize_route(
             places, fetch_modes, start_time, matrix_provider
         )
     except UnsupportedModeError as e:
-        return {'success': False, 'error': str(e)}
+        return {"success": False, "error": str(e)}
     except MatrixProviderError as e:
-        return {'success': False,
-                **_explain_matrix_refusal(str(e), places, modes)}
+        return {"success": False, **_explain_matrix_refusal(str(e), places, modes)}
 
     if not time_matrices:
-        return {'success': False,
-                'error': 'Failed to get travel data'}
+        return {"success": False, "error": "Failed to get travel data"}
 
     print("Create optimal matrices...")
     best_time_matrix, best_mode_matrix, vehicle_matrix = _create_optimal_matrices(
-        time_matrices, distance_matrices, fetch_modes, walking_preference,
-        max_walking_distance, max_cycling_distance
+        time_matrices,
+        distance_matrices,
+        fetch_modes,
+        walking_preference,
+        max_walking_distance,
+        max_cycling_distance,
     )
 
     print("Solve routing problem...")
     route_solution = _solve_routing_problem(
-        best_time_matrix, day_starts, day_ends, visit_seconds)
+        best_time_matrix, day_starts, day_ends, visit_seconds
+    )
 
-    if not route_solution['success']:
+    if not route_solution["success"]:
         return route_solution
 
     print("Build route response...")
     return _build_route_response(
-        route_solution, places, best_time_matrix,
-        best_mode_matrix, vehicle_matrix, distance_matrices, start_time,
-        modes, visit_seconds
+        route_solution,
+        places,
+        best_time_matrix,
+        best_mode_matrix,
+        vehicle_matrix,
+        distance_matrices,
+        start_time,
+        modes,
+        visit_seconds,
     )
 
 
 @log_time
-def _solve_routing_problem(time_matrix: list[list[int]],
-                           start_indices: list[int],
-                           end_indices: list[int],
-                           visit_seconds: list[int] | None = None
-                           ) -> dict[str, Any]:
+def _solve_routing_problem(
+    time_matrix: list[list[int]],
+    start_indices: list[int],
+    end_indices: list[int],
+    visit_seconds: list[int] | None = None,
+) -> dict[str, Any]:
     """
     Split the places across days and order each day, minimising total travel.
 
@@ -334,8 +341,7 @@ def _solve_routing_problem(time_matrix: list[list[int]],
     depots = set(start_indices) | set(end_indices)
     visits = visit_seconds or [0] * n_nodes
 
-    manager = pywrapcp.RoutingIndexManager(
-        n_nodes, n_days, start_indices, end_indices)
+    manager = pywrapcp.RoutingIndexManager(n_nodes, n_days, start_indices, end_indices)
     routing = pywrapcp.RoutingModel(manager)
 
     def travel_time_callback(from_index: int, to_index: int) -> int:
@@ -344,8 +350,7 @@ def _solve_routing_problem(time_matrix: list[list[int]],
         to_node: int = manager.IndexToNode(to_index)
         return time_matrix[from_node][to_node]
 
-    transit_callback_index = routing.RegisterTransitCallback(
-        travel_time_callback)
+    transit_callback_index = routing.RegisterTransitCallback(travel_time_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
     def total_time_callback(from_index: int, to_index: int) -> int:
@@ -362,14 +367,21 @@ def _solve_routing_problem(time_matrix: list[list[int]],
     total_callback_index = routing.RegisterTransitCallback(total_time_callback)
     routing.AddDimension(
         total_callback_index,
-        0,                          # no waiting between stops
+        0,  # no waiting between stops
         DAILY_TIME_BUDGET_SECONDS,
-        True,                       # every day starts its clock at zero
-        'DayTotal')
+        True,  # every day starts its clock at zero
+        "DayTotal",
+    )
 
     if n_days > 1:
-        _balance_days_across_vehicles(routing, manager, transit_callback_index,
-                                      n_nodes, start_indices, end_indices)
+        _balance_days_across_vehicles(
+            routing,
+            manager,
+            transit_callback_index,
+            n_nodes,
+            start_indices,
+            end_indices,
+        )
 
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = (
@@ -391,38 +403,41 @@ def _solve_routing_problem(time_matrix: list[list[int]],
         if any(visits[node] for node in range(n_nodes) if node not in depots):
             hours = DAILY_TIME_BUDGET_SECONDS // 3600
             return {
-                'success': False,
-                'error': (f'These places do not fit in {n_days} day(s): '
-                          f'travel plus time spent at each place exceeds the '
-                          f'{hours} hours a day allows. Add days or shorten '
-                          f'the time at some places.'),
-                'error_code': 'day_budget_exceeded',
-                'error_params': {
-                    'days': n_days,
-                    'budget_hours': hours,
+                "success": False,
+                "error": (
+                    f"These places do not fit in {n_days} day(s): "
+                    f"travel plus time spent at each place exceeds the "
+                    f"{hours} hours a day allows. Add days or shorten "
+                    f"the time at some places."
+                ),
+                "error_code": "day_budget_exceeded",
+                "error_params": {
+                    "days": n_days,
+                    "budget_hours": hours,
                 },
             }
         return {
-            'success': False,
-            'error': ('No solution found - OR-Tools could not split these '
-                      'places across the requested number of days')
+            "success": False,
+            "error": (
+                "No solution found - OR-Tools could not split these "
+                "places across the requested number of days"
+            ),
         }
 
     routes, total_distance = _extract_routes_from_solution(
-        routing, manager, solution, n_days)
-    return {
-        'success': True,
-        'routes': routes,
-        'total_distance': total_distance
-    }
+        routing, manager, solution, n_days
+    )
+    return {"success": True, "routes": routes, "total_distance": total_distance}
 
 
-def _balance_days_across_vehicles(routing: RoutingModel,
-                                  manager: RoutingIndexManager,
-                                  transit_callback_index: int,
-                                  n_nodes: int,
-                                  start_indices: list[int],
-                                  end_indices: list[int]) -> None:
+def _balance_days_across_vehicles(
+    routing: RoutingModel,
+    manager: RoutingIndexManager,
+    transit_callback_index: int,
+    n_nodes: int,
+    start_indices: list[int],
+    end_indices: list[int],
+) -> None:
     """
     Even out how much travel each day carries.
 
@@ -461,12 +476,14 @@ def _balance_days_across_vehicles(routing: RoutingModel,
 
     routing.AddDimension(
         transit_callback_index,
-        0,             # no waiting time between stops
+        0,  # no waiting time between stops
         24 * 60 * 60,  # a day cannot hold more than a day of travel
-        True,          # every day starts its clock at zero
-        'DayTravel')
-    routing.GetDimensionOrDie('DayTravel').SetGlobalSpanCostCoefficient(
-        DAY_BALANCE_COEFFICIENT)
+        True,  # every day starts its clock at zero
+        "DayTravel",
+    )
+    routing.GetDimensionOrDie("DayTravel").SetGlobalSpanCostCoefficient(
+        DAY_BALANCE_COEFFICIENT
+    )
 
     # Balancing alone still allows an empty day, which is never a useful
     # itinerary, so require at least one real stop per day. Depots do not count.
@@ -476,15 +493,16 @@ def _balance_days_across_vehicles(routing: RoutingModel,
 
     counter_index = routing.RegisterUnaryTransitCallback(stop_counter)
     routing.AddDimensionWithVehicleCapacity(
-        counter_index, 0, [n_nodes] * n_days, True, 'StopCount')
-    stop_count = routing.GetDimensionOrDie('StopCount')
+        counter_index, 0, [n_nodes] * n_days, True, "StopCount"
+    )
+    stop_count = routing.GetDimensionOrDie("StopCount")
     for vehicle in range(n_days):
         stop_count.CumulVar(routing.End(vehicle)).SetMin(1)
 
 
-def _check_visit_budget(visit_seconds: list[int],
-                        day_starts: list[int],
-                        day_ends: list[int]) -> dict[str, Any] | None:
+def _check_visit_budget(
+    visit_seconds: list[int], day_starts: list[int], day_ends: list[int]
+) -> dict[str, Any] | None:
     """
     Refuse a trip whose time at places alone cannot fit in the days allowed.
 
@@ -510,8 +528,9 @@ def _check_visit_budget(visit_seconds: list[int],
         smallest number of days that would fit, or None when the trip fits.
     """
     depots = set(day_starts) | set(day_ends)
-    needed = sum(seconds for node, seconds in enumerate(visit_seconds)
-                 if node not in depots)
+    needed = sum(
+        seconds for node, seconds in enumerate(visit_seconds) if node not in depots
+    )
     n_days = len(day_starts)
     available = n_days * DAILY_TIME_BUDGET_SECONDS
     if needed <= available:
@@ -521,17 +540,19 @@ def _check_visit_budget(visit_seconds: list[int],
     # Ceiling division: the last day may be part-used, but it is still a day.
     minimum_days = -(-needed // DAILY_TIME_BUDGET_SECONDS)
     return {
-        'error': (f'Time at these places adds up to {needed / 3600:.1f} h, '
-                  f'which does not fit in {n_days} day(s) of {budget_hours} h '
-                  f'— and that is before any travel. At least {minimum_days} '
-                  f'day(s) would be needed.'),
-        'error_code': 'day_budget_exceeded',
-        'error_params': {
-            'needed_hours': round(needed / 3600, 1),
-            'available_hours': available // 3600,
-            'days': n_days,
-            'budget_hours': budget_hours,
-            'minimum_days': minimum_days,
+        "error": (
+            f"Time at these places adds up to {needed / 3600:.1f} h, "
+            f"which does not fit in {n_days} day(s) of {budget_hours} h "
+            f"— and that is before any travel. At least {minimum_days} "
+            f"day(s) would be needed."
+        ),
+        "error_code": "day_budget_exceeded",
+        "error_params": {
+            "needed_hours": round(needed / 3600, 1),
+            "available_hours": available // 3600,
+            "days": n_days,
+            "budget_hours": budget_hours,
+            "minimum_days": minimum_days,
         },
     }
 
@@ -555,8 +576,10 @@ def _straight_line_meters(a: Place, b: Place) -> float:
         6371 km. Always a lower bound on the real travel distance.
     """
     lat1, lon1, lat2, lon2 = map(radians, [a.lat, a.lon, b.lat, b.lon])
-    haversine = (sin((lat2 - lat1) / 2) ** 2
-                 + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2) ** 2)
+    haversine = (
+        sin((lat2 - lat1) / 2) ** 2
+        + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2) ** 2
+    )
     return 2 * 6371000 * asin(sqrt(haversine))
 
 
@@ -577,14 +600,18 @@ def _furthest_pair(places: list[Place]) -> tuple[Place, Place, float] | None:
     if len(places) < 2:
         return None
     return max(
-        ((a, b, _straight_line_meters(a, b))
-         for i, a in enumerate(places) for b in places[i + 1:]),
-        key=lambda item: item[2])
+        (
+            (a, b, _straight_line_meters(a, b))
+            for i, a in enumerate(places)
+            for b in places[i + 1 :]
+        ),
+        key=lambda item: item[2],
+    )
 
 
-def _explain_matrix_refusal(message: str,
-                            places: list[Place],
-                            modes: list[str]) -> dict[str, Any]:
+def _explain_matrix_refusal(
+    message: str, places: list[Place], modes: list[str]
+) -> dict[str, Any]:
     """
     Turn a routing engine's complaint into something a traveller can act on.
 
@@ -616,27 +643,28 @@ def _explain_matrix_refusal(message: str,
         (rounded) and `mode`, for a client to phrase itself. The caller
         merges this into a result dict, so no `success` key is set here.
     """
-    if 'distance' not in message.lower():
-        return {'error': message}
+    if "distance" not in message.lower():
+        return {"error": message}
 
     furthest = _furthest_pair(places)
     if furthest is None:
-        return {'error': message}
+        return {"error": message}
 
     first, second, meters = furthest
     mode = modes[0] if modes else WALKING_MODE
-    verb = {WALKING_MODE: 'on foot',
-            CYCLING_MODE: 'by bike'}.get(mode, 'in one trip')
+    verb = {WALKING_MODE: "on foot", CYCLING_MODE: "by bike"}.get(mode, "in one trip")
 
     return {
-        'error': (f"'{first.query}' and '{second.query}' are "
-                  f"{meters / 1000:.0f} km apart — too far to cover {verb}."),
-        'error_code': 'too_far_for_mode',
-        'error_params': {
-            'first': first.query,
-            'second': second.query,
-            'km': round(meters / 1000),
-            'mode': mode,
+        "error": (
+            f"'{first.query}' and '{second.query}' are "
+            f"{meters / 1000:.0f} km apart — too far to cover {verb}."
+        ),
+        "error_code": "too_far_for_mode",
+        "error_params": {
+            "first": first.query,
+            "second": second.query,
+            "km": round(meters / 1000),
+            "mode": mode,
         },
     }
 
@@ -691,7 +719,8 @@ def _get_travel_matrices(
         print(f"Getting {mode} travel data via '{matrix_provider.name}'...")
         try:
             time_matrix, dist_matrix = matrix_provider.travel_matrix(
-                places, mode, start_time)
+                places, mode, start_time
+            )
         except (UnsupportedModeError, MatrixProviderError):
             # These carry a reason worth showing; only genuinely opaque
             # failures are flattened by the clause below.
@@ -713,7 +742,7 @@ def _create_optimal_matrices(
     modes: list[str],
     walking_preference: bool,
     max_walking_distance: int,
-    max_cycling_distance: int
+    max_cycling_distance: int,
 ) -> tuple[list[list[int]], list[list[str]], list[list[bool]]]:
     """
     Create matrices with the chosen mode, its time, and whether the leg is
@@ -756,13 +785,18 @@ def _create_optimal_matrices(
         for j in range(n_places):
             if i == j:
                 time_row.append(0)
-                mode_row.append('same_location')
+                mode_row.append("same_location")
                 vehicle_row.append(False)
             else:
                 best_time, best_mode, needs_vehicle = _find_best_mode_for_pair(
-                    i, j, time_matrices, distance_matrices, modes,
-                    walking_preference, max_walking_distance,
-                    max_cycling_distance
+                    i,
+                    j,
+                    time_matrices,
+                    distance_matrices,
+                    modes,
+                    walking_preference,
+                    max_walking_distance,
+                    max_cycling_distance,
                 )
                 time_row.append(best_time)
                 mode_row.append(best_mode)
@@ -781,7 +815,7 @@ def _reachable_human_mode(
     time_matrices: dict[str, list[list[int]]],
     distance_matrices: dict[str, list[list[int]]],
     max_walking_distance: int,
-    max_cycling_distance: int
+    max_cycling_distance: int,
 ) -> str | None:
     """
     The cheapest human-powered mode that can cover this leg, or None.
@@ -814,12 +848,16 @@ def _reachable_human_mode(
         either because the leg is too long or because the engine returned
         INFINITE_VAL for it.
     """
-    for mode, limit in ((WALKING_MODE, max_walking_distance),
-                        (CYCLING_MODE, max_cycling_distance)):
+    for mode, limit in (
+        (WALKING_MODE, max_walking_distance),
+        (CYCLING_MODE, max_cycling_distance),
+    ):
         if mode not in time_matrices:
             continue
-        if (distance_matrices[mode][from_idx][to_idx] <= limit
-                and time_matrices[mode][from_idx][to_idx] < INFINITE_VAL):
+        if (
+            distance_matrices[mode][from_idx][to_idx] <= limit
+            and time_matrices[mode][from_idx][to_idx] < INFINITE_VAL
+        ):
             return mode
     return None
 
@@ -832,7 +870,7 @@ def _find_best_mode_for_pair(
     modes: list[str],
     walking_preference: bool,
     max_walking_distance: int,
-    max_cycling_distance: int
+    max_cycling_distance: int,
 ) -> tuple[int, str, bool]:
     """
     Pick the transport mode for one leg, preferring human-powered travel.
@@ -876,13 +914,19 @@ def _find_best_mode_for_pair(
         cycling data was available to judge against.
     """
     human_mode = _reachable_human_mode(
-        from_idx, to_idx, time_matrices, distance_matrices,
-        max_walking_distance, max_cycling_distance)
+        from_idx,
+        to_idx,
+        time_matrices,
+        distance_matrices,
+        max_walking_distance,
+        max_cycling_distance,
+    )
 
     # With no walking or cycling data there is nothing to judge against, so
     # make no claim about whether a vehicle is needed.
-    human_data_available = any(mode in time_matrices
-                               for mode in (WALKING_MODE, CYCLING_MODE))
+    human_data_available = any(
+        mode in time_matrices for mode in (WALKING_MODE, CYCLING_MODE)
+    )
     requires_vehicle = human_data_available and human_mode is None
 
     if walking_preference and human_mode is not None:
@@ -900,11 +944,12 @@ def _find_best_mode_for_pair(
     return int(best_time), best_mode, requires_vehicle
 
 
-def _extract_routes_from_solution(routing: RoutingModel,
-                                  manager: RoutingIndexManager,
-                                  solution: Assignment,
-                                  n_days: int
-                                  ) -> tuple[list[list[int]], int]:
+def _extract_routes_from_solution(
+    routing: RoutingModel,
+    manager: RoutingIndexManager,
+    solution: Assignment,
+    n_days: int,
+) -> tuple[list[list[int]], int]:
     """Extract one ordered list of place indices per day, plus the total cost.
 
     Parameters
@@ -938,7 +983,8 @@ def _extract_routes_from_solution(routing: RoutingModel,
             previous_index = index
             index = solution.Value(routing.NextVar(index))
             total_distance += routing.GetArcCostForVehicle(
-                previous_index, index, vehicle)
+                previous_index, index, vehicle
+            )
 
         route_idxs.append(manager.IndexToNode(index))
         routes.append(route_idxs)
@@ -967,13 +1013,17 @@ def _vehicle_note(modes: list[str]) -> tuple[str, str]:
         'too_far_to_walk_or_cycle', or 'too_far_for_selected_mode' when the
         traveller asked for neither.
     """
-    verbs = {WALKING_MODE: 'walk', CYCLING_MODE: 'cycle'}
+    verbs = {WALKING_MODE: "walk", CYCLING_MODE: "cycle"}
     attempted = [verbs[mode] for mode in modes if mode in verbs]
     if not attempted:
-        return ('Too far for the selected mode: take public transport or a car',
-                'too_far_for_selected_mode')
-    return (f"Too far to {' or '.join(attempted)}: take public transport or a car",
-            f"too_far_to_{'_or_'.join(attempted)}")
+        return (
+            "Too far for the selected mode: take public transport or a car",
+            "too_far_for_selected_mode",
+        )
+    return (
+        f"Too far to {' or '.join(attempted)}: take public transport or a car",
+        f"too_far_to_{'_or_'.join(attempted)}",
+    )
 
 
 def _build_route_response(
@@ -985,7 +1035,7 @@ def _build_route_response(
     distance_matrices: dict[str, list[list[int]]],
     start_time: datetime,
     modes: list[str],
-    visit_seconds: list[int] | None = None
+    visit_seconds: list[int] | None = None,
 ) -> dict[str, Any]:
     """Build the final detailed response, one entry per day.
 
@@ -1024,7 +1074,7 @@ def _build_route_response(
         times are start plus travel plus time spent at each place, so they
         track the clock rather than just the walking.
     """
-    routes = route_solution['routes']
+    routes = route_solution["routes"]
     # Reconstructed rather than passed in, but identical to the set the solver
     # used: a depot node is reserved by its vehicle and never appears mid-route.
     depots = {r[0] for r in routes} | {r[-1] for r in routes}
@@ -1069,49 +1119,60 @@ def _build_route_response(
 
             requires_vehicle = vehicle_matrix[from_idx][to_idx]
             vehicle_note, vehicle_note_code = (
-                _vehicle_note(modes) if requires_vehicle else (None, None))
+                _vehicle_note(modes) if requires_vehicle else (None, None)
+            )
 
-            route_details.append({
-                'from_place': places[from_idx].display_name,
-                'to_place': places[to_idx].display_name,
-                'mode': mode_used,
-                'requires_vehicle': requires_vehicle,
-                'note': vehicle_note,
-                'note_code': vehicle_note_code,
-                'travel_time_seconds': travel_time,
-                'visit_time_seconds': stay,
-                'distance_meters': actual_distance,
-                'estimated_arrival': day_start + timedelta(seconds=elapsed)
-            })
+            route_details.append(
+                {
+                    "from_place": places[from_idx].display_name,
+                    "to_place": places[to_idx].display_name,
+                    "mode": mode_used,
+                    "requires_vehicle": requires_vehicle,
+                    "note": vehicle_note,
+                    "note_code": vehicle_note_code,
+                    "travel_time_seconds": travel_time,
+                    "visit_time_seconds": stay,
+                    "distance_meters": actual_distance,
+                    "estimated_arrival": day_start + timedelta(seconds=elapsed),
+                }
+            )
 
         total_travel_time += day_travel_time
         total_visit_time += day_visit_time
         total_actual_distance += day_distance
 
-        day_plans.append({
-            'day': day_number,
-            'ordered_places': [places[i].display_name for i in route_idxs],
-            'waypoints': [{'name': places[i].display_name,
-                           'lat': places[i].lat,
-                           'lon': places[i].lon,
-                           'visit_seconds': stay_at(i)} for i in route_idxs],
-            'route_details': route_details,
-            'total_travel_time_seconds': day_travel_time,
-            'total_visit_time_seconds': day_visit_time,
-            'total_distance_meters': day_distance,
-            'start_time': day_start,
-            'estimated_end_time': day_start + timedelta(seconds=elapsed)
-        })
+        day_plans.append(
+            {
+                "day": day_number,
+                "ordered_places": [places[i].display_name for i in route_idxs],
+                "waypoints": [
+                    {
+                        "name": places[i].display_name,
+                        "lat": places[i].lat,
+                        "lon": places[i].lon,
+                        "visit_seconds": stay_at(i),
+                    }
+                    for i in route_idxs
+                ],
+                "route_details": route_details,
+                "total_travel_time_seconds": day_travel_time,
+                "total_visit_time_seconds": day_visit_time,
+                "total_distance_meters": day_distance,
+                "start_time": day_start,
+                "estimated_end_time": day_start + timedelta(seconds=elapsed),
+            }
+        )
 
     return {
-        'success': True,
-        'days': day_plans,
-        'total_travel_time_seconds': total_travel_time,
-        'total_visit_time_seconds': total_visit_time,
-        'total_distance_meters': total_actual_distance,
-        'start_time': start_time,
-        'estimated_end_time': (day_plans[-1]['estimated_end_time']
-                               if day_plans else start_time)
+        "success": True,
+        "days": day_plans,
+        "total_travel_time_seconds": total_travel_time,
+        "total_visit_time_seconds": total_visit_time,
+        "total_distance_meters": total_actual_distance,
+        "start_time": start_time,
+        "estimated_end_time": (
+            day_plans[-1]["estimated_end_time"] if day_plans else start_time
+        ),
     }
 
 
@@ -1129,34 +1190,37 @@ def print_result(result: dict[str, Any]) -> None:
         kilometers; a failed one prints its `error`, plus the unresolved
         names from `validation_result` where that key is present.
     """
-    if result['success']:
-        total_seconds = result['total_travel_time_seconds']
+    if result["success"]:
+        total_seconds = result["total_travel_time_seconds"]
         print("\n" + "=" * 60)
         print("ROUTE RESULTS")
         print("=" * 60)
-        print(f"Total travel time: {total_seconds} seconds "
-              f"({total_seconds / 60:.1f} minutes)")
+        print(
+            f"Total travel time: {total_seconds} seconds "
+            f"({total_seconds / 60:.1f} minutes)"
+        )
         print(f"Total distance: {result['total_distance_meters'] / 1000:.2f} km")
 
-        for day in result['days']:
-            print(f"\nDAY {day['day']} — "
-                  f"{day['start_time'].strftime('%Y-%m-%d %H:%M')} to "
-                  f"{day['estimated_end_time'].strftime('%H:%M')} "
-                  f"({day['total_distance_meters'] / 1000:.2f} km)")
+        for day in result["days"]:
+            print(
+                f"\nDAY {day['day']} — "
+                f"{day['start_time'].strftime('%Y-%m-%d %H:%M')} to "
+                f"{day['estimated_end_time'].strftime('%H:%M')} "
+                f"({day['total_distance_meters'] / 1000:.2f} km)"
+            )
             print("-" * 60)
-            for i, detail in enumerate(day['route_details'], 1):
-                leg_seconds = detail['travel_time_seconds']
-                arrival = detail['estimated_arrival']
+            for i, detail in enumerate(day["route_details"], 1):
+                leg_seconds = detail["travel_time_seconds"]
+                arrival = detail["estimated_arrival"]
                 print(f"Step {i}: {detail['from_place']} → {detail['to_place']}")
                 print(f"  Mode: {detail['mode']}")
-                print(f"  Time: {leg_seconds} seconds "
-                      f"({leg_seconds / 60:.1f} min)")
+                print(f"  Time: {leg_seconds} seconds " f"({leg_seconds / 60:.1f} min)")
                 print(f"  Distance: {detail['distance_meters'] / 1000:.2f} km")
                 print(f"  Arrival: {arrival.strftime('%H:%M:%S')}")
                 print()
     else:
         print(f"\nOptimization failed: {result['error']}")
-        if 'validation_result' in result:
+        if "validation_result" in result:
             print("Please fix the following places and try again:")
-            for invalid in result['validation_result']['invalid_places']:
+            for invalid in result["validation_result"]["invalid_places"]:
                 print(f"  - {invalid['place']}: {invalid['error']}")

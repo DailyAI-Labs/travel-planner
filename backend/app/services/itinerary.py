@@ -9,7 +9,7 @@ evicted, and a restart loses everything.
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.models.travel import ComputationStatus, ResolvedPlace, TravelPlanRequest
@@ -19,8 +19,7 @@ from app.services.travel_planner import TravelPlanner
 _planner = TravelPlanner()
 
 
-async def resolve_place(place: str, area: str | None = None
-                        ) -> Place | None:
+async def resolve_place(place: str, area: str | None = None) -> Place | None:
     """
     Resolve one place name off the event loop.
 
@@ -60,8 +59,16 @@ def _to_places(resolved: list[ResolvedPlace] | None) -> list[Place] | None:
     """
     if resolved is None:
         return None
-    return [Place(query=item.query or item.name, display_name=item.name,
-                  lat=item.lat, lon=item.lon) for item in resolved]
+    return [
+        Place(
+            query=item.query or item.name,
+            display_name=item.name,
+            lat=item.lat,
+            lon=item.lon,
+        )
+        for item in resolved
+    ]
+
 
 travel_plans: dict[str, dict[str, Any]] = {}
 
@@ -86,7 +93,7 @@ async def compute_itinerary_async(request: TravelPlanRequest, code: str) -> None
     """
     try:
         travel_plans[code]["status"] = ComputationStatus.PROCESSING
-        travel_plans[code]["updated_at"] = datetime.now().isoformat()
+        travel_plans[code]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         itinerary = await asyncio.to_thread(
             _planner.plan_route,
@@ -103,34 +110,40 @@ async def compute_itinerary_async(request: TravelPlanRequest, code: str) -> None
             day_starts=request.day_starts,
             day_ends=request.day_ends,
             resolved_places=_to_places(request.resolved_places),
-            visit_seconds=request.visit_seconds
+            visit_seconds=request.visit_seconds,
         )
 
         if not itinerary.get("success"):
             # A failed plan carries only 'error', not the Itinerary fields, so
             # reporting it as COMPLETED would break response validation and
             # hide the reason (an unsupported mode, an unresolved place, ...).
-            travel_plans[code].update({
-                "status": ComputationStatus.FAILED,
-                "error": _failure_message(itinerary),
-                "error_code": itinerary.get("error_code"),
-                "error_params": itinerary.get("error_params"),
-                "updated_at": datetime.now().isoformat()
-            })
+            travel_plans[code].update(
+                {
+                    "status": ComputationStatus.FAILED,
+                    "error": _failure_message(itinerary),
+                    "error_code": itinerary.get("error_code"),
+                    "error_params": itinerary.get("error_params"),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             return
 
-        travel_plans[code].update({
-            "status": ComputationStatus.COMPLETED,
-            "itinerary": itinerary,
-            "updated_at": datetime.now().isoformat()
-        })
+        travel_plans[code].update(
+            {
+                "status": ComputationStatus.COMPLETED,
+                "itinerary": itinerary,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
-    except Exception as e:  # noqa: BLE001 - nothing can propagate out of a background task
-        travel_plans[code].update({
-            "status": ComputationStatus.FAILED,
-            "error": str(e),
-            "updated_at": datetime.now().isoformat()
-        })
+    except Exception as e:  # noqa: BLE001 - nothing escapes a background task
+        travel_plans[code].update(
+            {
+                "status": ComputationStatus.FAILED,
+                "error": str(e),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
 
 def _failure_message(itinerary: dict[str, Any]) -> str:
@@ -185,12 +198,12 @@ async def start_itinerary_computation(request: TravelPlanRequest) -> str:
 
     travel_plans[code] = {
         "status": ComputationStatus.PENDING,
-        "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
         "itinerary": None,
         "error": None,
         "error_code": None,
-        "error_params": None
+        "error_params": None,
     }
 
     asyncio.create_task(compute_itinerary_async(request, code))

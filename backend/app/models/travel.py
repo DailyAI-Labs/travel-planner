@@ -6,7 +6,7 @@ and publishes their `Field(description=...)` text in the OpenAPI schema, so
 field semantics live there rather than in the class docstrings.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 class ComputationStatus(str, Enum):
     """Lifecycle of a background itinerary computation."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -23,6 +24,7 @@ class ComputationStatus(str, Enum):
 
 class ResolvedPlace(BaseModel):
     """A place already resolved by the geocode endpoint."""
+
     query: str
     name: str
     lat: float
@@ -36,6 +38,7 @@ class TravelPlanRequest(BaseModel):
     position in `places`; negative values count from the end. Distances are in
     meters.
     """
+
     places: list[str]
     resolved_places: list[ResolvedPlace] | None = Field(
         default=None,
@@ -97,6 +100,7 @@ class TravelPlanRequest(BaseModel):
 
 class TravelPlanStatus(BaseModel):
     """Acknowledgement of a submitted request, carrying its tracking code."""
+
     code: str
     status: str
     message: str
@@ -109,6 +113,7 @@ class RouteDetail(BaseModel):
     threshold, with `note` explaining it in English; the leg is still costed
     and timed, using whichever available mode is fastest.
     """
+
     from_place: str
     to_place: str
     mode: str
@@ -135,6 +140,7 @@ class RouteDetail(BaseModel):
 
 class Waypoint(BaseModel):
     """A stop in visit order, with the coordinates needed to plot it."""
+
     name: str
     lat: float
     lon: float
@@ -143,6 +149,7 @@ class Waypoint(BaseModel):
 
 class GeocodeRequest(BaseModel):
     """A single place name to resolve, with optional area context."""
+
     place: str
     area: str | None = Field(
         default=None,
@@ -152,6 +159,7 @@ class GeocodeRequest(BaseModel):
 
 class GeocodeResponse(BaseModel):
     """Result of resolving a single place name, for validation as you type."""
+
     found: bool
     query: str
     place: Waypoint | None = None
@@ -160,6 +168,7 @@ class GeocodeResponse(BaseModel):
 
 class DayPlan(BaseModel):
     """One day of the trip, in visit order."""
+
     day: int
     ordered_places: list[str]
     waypoints: list[Waypoint] = []
@@ -177,6 +186,7 @@ class Itinerary(BaseModel):
     The totals sum the per-day figures, in seconds and meters respectively.
     End times account for time spent at places as well as travel.
     """
+
     success: bool
     days: list[DayPlan]
     total_travel_time_seconds: int
@@ -190,12 +200,13 @@ class TravelPlanResponse(BaseModel):
     """A tracked computation: its status and, once finished, its outcome.
 
     `itinerary` is populated only for COMPLETED, the `error*` fields only for
-    FAILED. The `created_at`/`updated_at` defaults are evaluated at import
-    time, so a default-constructed response reports the server's start time.
+    FAILED. `created_at`/`updated_at` are UTC instants stamped per instance,
+    unlike the itinerary's own times, which are local wall-clock.
     """
+
     status: ComputationStatus = ComputationStatus.PENDING
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     itinerary: Itinerary | None = None
     error: str | None = None
     error_code: str | None = Field(

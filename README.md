@@ -1,4 +1,6 @@
-# DailyAI: Travel Planner
+![Travel Planner — powered by DailyAI Labs](docs/images/readme-front.png)
+
+# Travel Planner
 
 Travel planning application to organize trips by optimizing itineraries.
 
