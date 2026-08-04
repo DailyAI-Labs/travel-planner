@@ -1,0 +1,68 @@
+# Render blueprint: the API and the UI as two services.
+#
+#   https://dashboard.render.com/blueprints -> New Blueprint Instance
+#
+# The external dependencies stay the public ones the app already defaults to,
+# so nothing else needs deploying. Swap GEOCODER_DOMAIN and VALHALLA_URL for
+# your own instances when the fair-use limits of the community endpoints start
+# to matter.
+#
+# The two services reference each other by URL: the API has to allow the UI's
+# origin, and the UI is built with the API's address baked in. Render assigns
+# those URLs only once the services exist, so the values below assume the
+# names resolve to <name>.onrender.com. If either subdomain is already taken
+# Render appends a suffix — check both URLs after the first deploy and fix
+# CORS_ORIGINS and REACT_APP_API_URL if they differ.
+
+services:
+  # --- Backend --------------------------------------------------------------
+  # Itineraries live in a module-level dict, so this must stay a single
+  # process: no --workers, no scaling past one instance.
+  - type: web
+    name: dai-travel-planner-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # requirements.txt is written against 3.12; Render defaults to newer.
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: CORS_ORIGINS
+        value: https://dai-travel-planner-web.onrender.com
+      - key: GEOCODER
+        value: photon
+      - key: GEOCODER_MIN_DELAY
+        value: "1.0"
+      - key: GEOCODER_USER_AGENT
+        value: travel-planner
+      - key: MATRIX_PROVIDER
+        value: valhalla
+      - key: VALHALLA_URL
+        value: https://valhalla1.openstreetmap.de
+
+  # --- Frontend -------------------------------------------------------------
+  # Static sites are always on, so only the API pays the free plan's spin-down.
+  - type: web
+    name: dai-travel-planner-web
+    runtime: static
+    region: frankfurt
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./build
+    envVars:
+      # Read at build time by src/api.js, not at runtime: changing it requires
+      # a rebuild, not just a restart.
+      - key: REACT_APP_API_URL
+        value: https://dai-travel-planner-api.onrender.com
+      # Render sets CI=true, which makes create-react-app treat lint warnings
+      # as build failures.
+      - key: CI
+        value: "false"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
