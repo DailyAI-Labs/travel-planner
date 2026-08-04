@@ -4,15 +4,28 @@
 
 Travel planning application to organize trips by optimizing itineraries.
 
-### Tech Stack
-- Backend: Python (FastAPI)
-- Frontend: React
-- Geocoding: [Photon](https://github.com/komoot/photon) (OpenStreetMap), swappable
-- Travel times and distances: [Valhalla](https://github.com/valhalla/valhalla), swappable
-- Route optimization: Google OR-Tools
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Backend | Python ([FastAPI](https://fastapi.tiangolo.com/)) |
+| Frontend | React |
+| Geocoding | [Photon](https://github.com/komoot/photon) (OpenStreetMap), swappable |
+| Travel times and distances | [Valhalla](https://github.com/valhalla/valhalla), swappable |
+| Route optimization | [Google OR-Tools](https://developers.google.com/optimization) |
 
 No paid API is required. Both external services are open source and
 self-hostable, and cost nothing per request.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Geocoding](#geocoding) — providers, why `area` matters, self-hosting Photon
+- [Travel times and distances](#travel-times-and-distances) — splitting across
+  days, time at each place, modes, distance limits, self-hosting Valhalla
+- [The interface](#the-interface) — planning a trip, exporting it
+- [API reference](#api-reference) — endpoints and an example request
+- [Development](#development) — running the halves separately, tests, tunables
 
 ## Quick start
 
@@ -179,11 +192,12 @@ travel turns into an unexplained "no solution" the moment it cannot be met. A
 separate floor of one stop per day keeps any day from being emptied out, since
 piling everything onto one day genuinely does minimise total travel.
 
-Guided local search never proves optimality, so `SOLVER_TIME_LIMIT_MS` is the
-solver's runtime rather than a ceiling on it — set it to 30 s and every
-multi-day plan takes 30 s. Measured on fixed instances up to 40 places over
-4 days, the objective was identical at 500 ms and at 30 s, so it is set to one
-second.
+Guided local search never proves optimality, so the solver's time limit is its
+runtime rather than a ceiling on it — set it to 30 s and every multi-day plan
+takes 30 s. Measured on fixed instances up to 40 places over 4 days, the
+objective was identical at 500 ms and at 30 s, so it is set to one second. It
+is `SOLVER_TIME_LIMIT_MS` in `backend/app/services/utils.py` — a module
+constant, not an environment variable, so changing it means editing the source.
 
 Start and end places are not stops, so they do not count towards a day's load.
 A day that goes from one place to a different one is already a journey even
@@ -191,17 +205,47 @@ with nothing in between; a day that loops back to its own start needs at least
 one place of its own, and the request is rejected when there are not enough to
 go round.
 
+### Time at each place
+
+`visit_seconds` gives every place its own dwell time, one entry per entry in
+`places` and in the same order; omit it for a travel-only plan. The UI shows a
+box next to each place and accepts what people actually type — `45m`, `1h30`,
+`1:30`, `1.5h`, `2h`, or a bare number of minutes — defaulting to one hour
+each.
+
+Dwell time changes what a day means rather than just annotating it: every
+`estimated_arrival` and each day's `estimated_end_time` account for it, each
+leg reports the `visit_time_seconds` spent at its origin before departing, and
+the itinerary carries `total_visit_time_seconds` alongside the travel total.
+Days are still balanced on travel time alone, since that is the part reordering
+can actually improve.
+
+Start and end places contribute nothing, even if you give them a time. They are
+depots rather than stops, so the hotel you leave from and return to is not
+somewhere you "spend" two hours.
+
+**Travel plus visits is capped at 16 hours per day.** That is 24 hours minus 8
+asleep, fixed rather than configurable — a ceiling nobody needs to tune, and
+one less number to fill in. It is a safety rail, not a target. Being the one
+hard constraint that can make an otherwise well-formed request infeasible, it
+fails loudly rather than as an unexplained "no solution": `error_code` is
+`day_budget_exceeded` and `error_params` carries the hours needed, the hours
+available, and the smallest number of days that would fit. Visit time on its
+own is checked before any matrix is fetched, so an impossible trip fails in
+milliseconds; the combined total is enforced by the solver.
+
 ### Modes
 
 You travel one way per trip: `walking`, `bicycle`, or `driving`. The UI offers
 these as a single choice, and walking is the default.
 
 For walking and cycling, a leg longer than its threshold —
-`max_walking_distance` (default 1000 m) or `max_cycling_distance` (default
-5000 m) — is not silently switched to another mode. It is returned with
-`requires_vehicle: true` and a note naming what you asked for, e.g. *"Too far
-to walk: take public transport or a car"*. Raise the threshold if you are
-willing to go further on your own.
+`max_walking_distance` or `max_cycling_distance` — is not silently switched to
+another mode. It comes back with `requires_vehicle: true` and a note naming
+what you asked for, e.g. *"Too far to walk: take public transport or a car"*.
+Raise the threshold if you are willing to go further on your own.
+`max_walking_distance` is required on the request and the UI sends 1000 m;
+`max_cycling_distance` may be omitted and defaults to 5000 m.
 
 Those flagged legs are still costed with driving times, which is why the
 driving matrix is fetched even when you did not ask for it. Without a real
@@ -251,59 +295,13 @@ the [official Valhalla build instructions](https://github.com/valhalla/valhalla)
 and run `valhalla_service` yourself; it serves `sources_to_targets` on port
 8002 either way.
 
-### Backend set up
-1. Create and activate a virtual environment
-2. Navigate to the backend folder
-```
-cd backend
-```
-3. Install required libraries by running 
-```
-pip install -r requirements.txt
-```
-4. Install our package in editable mode by running: 
-```
-pip3 install -e .
-```
-
-### Running the backend
-- From the root folder, run
-```
-python backend/main.py   
-```
-
-- Alternatively, from the folder `backend/`, run
-```
-uvicorn app.main:app --reload    
-```
-
-Example
-```
-{
-  "places": ["Big Ben", "Tower Bridge", "Buckingham Palace", "Tower of London", "London Eye"],
-  "area": "London",
-  "start_idx": 0,
-  "end_idx": -1,
-  "start_time": "2025-05-30T21:31:18.387Z",
-  "modes": ["walking", "driving"],
-  "walking_preference": true,
-  "max_walking_distance": 1000
-}
-```
-
-
-### Running the frontend
-```
-cd frontend
-npm install
-npm start
-```
+## The interface
 
 Name the city and confirm it — it is required, because a bare landmark name is
 ambiguous worldwide, and everything you add afterwards is looked up inside it.
-Then add the places, choose how you are getting around, pick where to start and
-finish, and plan. The result is shown as an ordered list of legs and drawn on a
-map.
+Then add the places, give each one however long you plan to spend there, choose
+how you are getting around, pick where to start and finish, and plan. The
+result is shown as an ordered list of legs and drawn on a map.
 
 Places can be added one at a time or pasted as a whole list. The paste box
 strips the markers people actually use — `-`, `*`, `•`, `1.`, `(2)`, `#3`,
@@ -319,6 +317,7 @@ Example
 
 - City or region: `London`
 - Places: `Big Ben`, `Tower Bridge`, `Buckingham Palace`, `Tower of London`
+- Time at each place: `1h` by default, editable per place
 - Getting around: `On foot`
 - Days: `1` — raise it and each day gets its own start and finish selectors
 
@@ -330,3 +329,106 @@ Valhalla for route shapes and returning them from the backend. Note that
 [tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 intended for modest traffic; anything heavier should use a self-hosted or
 commercial tile source.
+
+### Exporting an itinerary
+
+**Export Markdown** saves the finished plan as a `.md` file: one section per
+day, stops in visit order with their times, distances and any
+too-far-to-walk notes, plus the trip totals. The file is named after the city
+and the day it was exported — `itinerary-london-2026-08-04.md` — and is written
+in whichever language the interface is set to.
+
+It runs entirely in the browser. The plan is already in memory once it has been
+computed, so there is nothing to ask the backend for and nothing leaves the
+page.
+
+## API reference
+
+Every endpoint lives under `/api/v1`. There is no authentication, and jobs are
+held in a module-level dict: nothing is persisted and nothing is evicted, so
+restarting the backend loses every plan.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/geocode` | Resolve one place name to coordinates |
+| `POST` | `/compute_itinerary` | Submit a trip; returns a 12-character code immediately |
+| `GET` | `/travel_plan/{code}` | The full plan; poll until `completed` or `failed` |
+| `GET` | `/travel_plan/{code}/status` | Status only — cheaper to poll than the whole itinerary |
+| `DELETE` | `/travel_plan/{code}` | Drop one plan from the store |
+| `GET` | `/travel_plans/status` | Every tracking code currently in memory |
+
+`GET /health` sits outside the prefix, and FastAPI serves interactive docs at
+[`/docs`](http://localhost:8000/docs) while the backend is running.
+
+A request to `/compute_itinerary`, using every optional field — five places
+over two days, leaving from and returning to the hotel each day:
+
+```json
+{
+  "places": ["Hotel", "Big Ben", "Tower Bridge", "Buckingham Palace", "Tower of London"],
+  "area": "London",
+  "start_idx": 0,
+  "end_idx": 0,
+  "days": 2,
+  "day_starts": [0, 0],
+  "day_ends": [0, 0],
+  "visit_seconds": [0, 3600, 1800, 3600, 5400],
+  "start_time": "2026-05-30T09:00:00Z",
+  "modes": ["walking"],
+  "walking_preference": true,
+  "max_walking_distance": 1000,
+  "max_cycling_distance": 5000
+}
+```
+
+Required: `places`, `start_idx`, `end_idx`, `start_time`, `modes`,
+`walking_preference`, `max_walking_distance`. Everything else may be omitted.
+Index fields point into `places` and may be negative, counting from the end.
+`modes` is a list for historical reasons, but the interface sends exactly one —
+you travel one way per trip. Passing `resolved_places`, the payloads `/geocode`
+already returned in the same order as `places`, skips geocoding entirely.
+
+Failures a client can act on carry a stable `error_code` and machine-readable
+`error_params` beside the English `error` text, so a UI can phrase them in its
+own language: `too_far_for_mode` when the routing engine refuses the distance,
+and `day_budget_exceeded` when the 16-hour daily cap cannot be met.
+
+## Development
+
+The virtualenv lives at `.venv/` in the **repo root**, not in `backend/`, and
+the backend is installed editable. That is why imports read `app.services...`
+rather than `backend.app.services...`, and why the backend runs from the repo
+root. `./run.sh` sets all of this up; [Quick start](#quick-start) has the
+manual equivalent.
+
+To run the backend with reload on every edit, from the repo root:
+
+```
+uvicorn app.main:app --reload
+```
+
+The frontend suite is the only test suite that exists:
+
+```
+npm --prefix frontend test
+```
+
+Configuration is `backend/.env`, copied from `backend/.env.example` on first
+run; that file documents every geocoding and routing setting. Three more are
+read from the environment without appearing there, since the defaults are
+almost always right:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOST` | `0.0.0.0` | Interface uvicorn binds to |
+| `PORT` | `8000` | Backend port |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins |
+
+A few numbers are deliberately constants in `backend/app/services/utils.py`
+rather than settings, so changing them means editing the source:
+
+| Constant | Value | What it does |
+|---|---|---|
+| `SOLVER_TIME_LIMIT_MS` | `1000` | How long the solver keeps improving a solution |
+| `DAILY_TIME_BUDGET_SECONDS` | `16 * 60 * 60` | Hard cap on travel plus visits per day |
+| `DAY_BALANCE_COEFFICIENT` | `100` | How hard days are pushed towards equal travel time |
