@@ -12,6 +12,18 @@ import { DEFAULT_VISIT_MINUTES } from './components/duration';
 const POLL_INTERVAL_MS = 2000;
 const MAX_DAYS = 14;
 
+// Health check cadence. A free Render instance answers in under a minute once
+// woken, so refusals inside that window read as a cold start rather than as a
+// failure, and are retried briskly. Past it the badge says offline but the
+// asking continues, since the backend may well come back.
+const BACKEND_WAKE_TIMEOUT_MS = 150000;
+const BACKEND_WAKE_RETRY_MS = 4000;
+const BACKEND_RETRY_MS = 15000;
+// While it is answering, often enough to notice it going away without
+// pestering it. Also, incidentally, often enough to hold off the idle
+// shutdown for as long as someone is actually looking at the page.
+const BACKEND_POLL_MS = 60000;
+
 // One way of getting around per trip. Stretches the chosen mode cannot cover
 // are flagged rather than silently switched to another mode.
 const TRAVEL_MODES = ['walking', 'bicycle', 'driving'];
@@ -74,7 +86,7 @@ function App() {
   const [polling, setPolling] = useState(false);
   const [plan, setPlan] = useState(null);
   const [error, setError] = useState(null);
-  const [backendUp, setBackendUp] = useState(null);
+  const [backendStatus, setBackendStatus] = useState('checking');
 
   const trimmedArea = area.trim();
   const areaLocked = committedArea !== '' && committedArea === trimmedArea;
@@ -84,11 +96,67 @@ function App() {
     setCommittedArea(trimmedArea);
   };
 
+  /**
+   * Keep the badge honest about the backend for as long as the page is open.
+   *
+   * Checking once on load answers the wrong question: it reports what was
+   * true when the tab opened, and stays there. A backend that sleeps when
+   * idle — a free Render instance, say — is woken by the first request to
+   * reach it and takes the better part of a minute to answer, so an early
+   * refusal means "starting up", not "dead"; and one that goes away later
+   * would otherwise still be shown as online. So this re-asks: quickly while
+   * it looks like a cold start, slowly once it is answering, and forever
+   * rather than settling on a verdict.
+   */
   useEffect(() => {
-    checkHealth().then(
-      () => setBackendUp(true),
-      () => setBackendUp(false)
-    );
+    let cancelled = false;
+    let timer = null;
+    // When the current run of failures began; null whenever it is answering.
+    let failingSince = null;
+
+    const check = () => {
+      // Nothing on a hidden tab is worth a request, and keeping a sleeping
+      // backend awake for a tab nobody is looking at would be rude. The
+      // visibility listener restarts the loop.
+      if (document.hidden) return;
+
+      checkHealth().then(
+        () => {
+          if (cancelled) return;
+          failingSince = null;
+          setBackendStatus('online');
+          timer = setTimeout(check, BACKEND_POLL_MS);
+        },
+        () => {
+          if (cancelled) return;
+          if (failingSince === null) failingSince = Date.now();
+
+          const starting = Date.now() - failingSince < BACKEND_WAKE_TIMEOUT_MS;
+          setBackendStatus(starting ? 'waking' : 'offline');
+          timer = setTimeout(
+            check,
+            starting ? BACKEND_WAKE_RETRY_MS : BACKEND_RETRY_MS
+          );
+        }
+      );
+    };
+
+    // Coming back to a tab left open for an hour: what it shows is as stale
+    // as the tab is, so ask again straight away rather than at the next tick.
+    const onVisibilityChange = () => {
+      if (cancelled || document.hidden) return;
+      clearTimeout(timer);
+      check();
+    };
+
+    check();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   const updatePlace = useCallback((id, patch) => {
@@ -311,12 +379,8 @@ function App() {
               </option>
             ))}
           </select>
-          <span
-            className={`health health-${backendUp === null ? 'unknown' : backendUp}`}
-          >
-            {backendUp === null && t('health.checking')}
-            {backendUp === true && t('health.online')}
-            {backendUp === false && t('health.offline')}
+          <span className={`health health-${backendStatus}`}>
+            {t(`health.${backendStatus}`)}
           </span>
         </div>
       </header>
