@@ -1,5 +1,23 @@
 import { createItineraryPdf, pdfFilename, pdfText } from './itineraryPdf';
 
+// Every string drawn on a page, recorded as it reaches jsPDF: the document's
+// own output is compressed, so this is the only readable view of it.
+const printed = [];
+jest.mock('jspdf', () => {
+  const actual = jest.requireActual('jspdf');
+  class RecordingPdf extends actual.jsPDF {
+    constructor(...args) {
+      super(...args);
+      const text = this.text;
+      this.text = (value, ...rest) => {
+        printed.push([value].flat().join(' '));
+        return text.call(this, value, ...rest);
+      };
+    }
+  }
+  return { ...actual, jsPDF: RecordingPdf };
+});
+
 // The real `t` for the keys the exporter touches, so the tests fail if a key
 // is renamed out from under it.
 const STRINGS = {
@@ -19,8 +37,8 @@ const STRINGS = {
   'results.days': 'days',
   'results.day': 'Day {day}',
   'results.backTo': 'Back to {name}',
-  'results.arrive': 'arrive {time}',
   'results.stay': 'stay {duration}',
+  'results.wait': 'wait {duration} for opening',
   'results.visits': 'at places',
   'mode.walking': 'walking',
   'mode.driving': 'driving',
@@ -95,6 +113,45 @@ test('a plan without a map still produces one page of PDF', () => {
   // A key the catalogue does not know would have been printed raw.
   const unknown = requested.filter((key) => !(key in STRINGS));
   expect(unknown).toEqual([]);
+});
+
+test('stop times print with a dash, not an arrow the font lacks', () => {
+  const { t } = translator();
+  const timed = {
+    ...singleDay,
+    days: [
+      day(
+        1,
+        [
+          {
+            name: 'Colosseo',
+            lat: 41.89,
+            lon: 12.49,
+            visit_seconds: 3600,
+            arrival: '2026-08-04T09:00:00',
+            departure: '2026-08-04T10:00:00',
+          },
+          {
+            name: 'Foro Romano',
+            lat: 41.892,
+            lon: 12.485,
+            visit_seconds: 0,
+            arrival: '2026-08-04T10:12:00',
+            departure: '2026-08-04T10:12:00',
+          },
+        ],
+        [leg()]
+      ),
+    ],
+  };
+
+  printed.length = 0;
+  createItineraryPdf({ itinerary: timed, area: 'Roma', t });
+  const schedule = printed.filter((text) => text.includes('stay 1 h'));
+
+  expect(schedule).toHaveLength(1);
+  expect(schedule[0]).toContain(' – ');
+  expect(schedule[0]).not.toMatch(/[?→]/);
 });
 
 test('a long itinerary flows onto further pages', () => {

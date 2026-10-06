@@ -32,7 +32,7 @@ test('rejects rather than guesses', () => {
 });
 
 test('formats back into what the box should show', () => {
-  expect(formatDuration(0)).toBe('');
+  expect(formatDuration(0)).toBe('0m');
   expect(formatDuration(45)).toBe('45m');
   expect(formatDuration(60)).toBe('1h');
   expect(formatDuration(90)).toBe('1h 30m');
@@ -40,7 +40,7 @@ test('formats back into what the box should show', () => {
 });
 
 test('parse and format round-trip', () => {
-  for (const minutes of [5, 45, 60, 90, 120, 195]) {
+  for (const minutes of [0, 5, 45, 60, 90, 120, 195]) {
     expect(parseDuration(formatDuration(minutes))).toBe(minutes);
   }
 });

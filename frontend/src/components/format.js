@@ -19,6 +19,36 @@ export function formatTime(value) {
 }
 
 /**
+ * When a stop is reached and left, e.g. `09:15 → 10:15`.
+ *
+ * A stop with no time spent there is reached and left at once, so it shows a
+ * single time. Null when the plan carries no times for the stop. `separator`
+ * exists for the PDF, whose built-in fonts have no arrow.
+ */
+export function formatStopTimes(point, separator = ' → ') {
+  if (!point.arrival) return null;
+  const arrival = formatTime(point.arrival);
+  const departure = point.departure ? formatTime(point.departure) : arrival;
+  return departure === arrival ? arrival : `${arrival}${separator}${departure}`;
+}
+
+/**
+ * What happens at a stop besides arriving and leaving: the visit itself and
+ * any wait for the place to open, e.g. `stay 1 h 00 min · wait 15 min for
+ * opening`. Null when neither applies.
+ */
+export function describeStay(point, t) {
+  const parts = [];
+  if (point.visit_seconds > 0) {
+    parts.push(t('results.stay', { duration: formatDuration(point.visit_seconds) }));
+  }
+  if (point.wait_seconds > 0) {
+    parts.push(t('results.wait', { duration: formatDuration(point.wait_seconds) }));
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
  * Phrase a leg's vehicle note in the reader's language.
  *
  * Mirrors `describeFailure`: the backend sends a stable code, and anything it

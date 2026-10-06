@@ -3,8 +3,10 @@ import { useI18n } from '../i18n';
 import { dayColour } from './RouteMap';
 import {
   describeLegNote,
+  describeStay,
   formatDistance,
   formatDuration,
+  formatStopTimes,
   formatTime,
   isLoop,
 } from './format';
@@ -43,6 +45,8 @@ function DaySection({ day, dayIndex, showHeading }) {
           const note = leg ? describeLegNote(leg, t) : null;
           // The return to the start is not an extra place to visit.
           const isReturn = loop && index === waypoints.length - 1;
+          const times = formatStopTimes(point);
+          const stay = describeStay(point, t);
           return (
             <li key={`${point.name}-${index}`} className="leg">
               <div className="leg-stop">
@@ -56,28 +60,22 @@ function DaySection({ day, dayIndex, showHeading }) {
                 <span className="leg-place">
                   {isReturn ? t('results.backTo', { name: point.name }) : point.name}
                 </span>
-                {!isReturn && point.visit_seconds > 0 && (
-                  <span className="leg-stay">
-                    {t('results.stay', {
-                      duration: formatDuration(point.visit_seconds),
-                    })}
-                  </span>
-                )}
+                <span className="leg-schedule">
+                  {times && <span className="leg-times">{times}</span>}
+                  {stay && <span className="leg-stay">{stay}</span>}
+                </span>
               </div>
 
               {leg && (
                 <div
                   className={`leg-travel${leg.requires_vehicle ? ' leg-travel-vehicle' : ''}`}
                 >
-                  <span className="leg-mode">
-                    {MODE_ICON[leg.mode] || '➜'} {t(`mode.${leg.mode}`)}
-                  </span>
                   <span className="leg-metrics">
-                    {formatDuration(leg.travel_time_seconds)} ·{' '}
-                    {formatDistance(leg.distance_meters)} ·{' '}
-                    {t('results.arrive', {
-                      time: formatTime(leg.estimated_arrival),
-                    })}
+                    <span className="leg-mode">
+                      {MODE_ICON[leg.mode] || '➜'} {t(`mode.${leg.mode}`)}
+                    </span>{' '}
+                    · {formatDuration(leg.travel_time_seconds)} ·{' '}
+                    {formatDistance(leg.distance_meters)}
                   </span>
                   {note && <span className="leg-note">{note}</span>}
                 </div>

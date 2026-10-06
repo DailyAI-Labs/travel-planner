@@ -50,9 +50,14 @@ function VisitTimeInput({ minutes, onCommit, disabled, ariaLabel }) {
       disabled={disabled}
       aria-label={ariaLabel}
       aria-invalid={invalid ? 'true' : undefined}
-      placeholder="1h"
+      placeholder="0m"
     />
   );
+}
+
+/** Closing no later than opening; "HH:MM" strings compare correctly as text. */
+export function hoursInvalid(place) {
+  return Boolean(place.opens && place.closes && place.closes <= place.opens);
 }
 
 /**
@@ -100,6 +105,19 @@ function PlaceList({ places, onChange, onAdd, disabled, needsArea }) {
     onChange(places.filter((place) => place.id !== id));
   };
 
+  // One stray click would otherwise wipe a list that took a while to build.
+  const clearPlaces = () => {
+    if (window.confirm(t('form.clearPlacesConfirm', { count: places.length }))) {
+      onChange([]);
+    }
+  };
+
+  const setHours = (id, field, value) => {
+    onChange(
+      places.map((place) => (place.id === id ? { ...place, [field]: value } : place))
+    );
+  };
+
   const setVisitMinutes = (id, minutes) => {
     onChange(
       places.map((place) =>
@@ -141,14 +159,26 @@ function PlaceList({ places, onChange, onAdd, disabled, needsArea }) {
         </button>
       </div>
 
-      <button
-        type="button"
-        className="link-button"
-        onClick={() => setBatchOpen(true)}
-        disabled={disabled || needsArea || adding}
-      >
-        {t('form.addBatch')}
-      </button>
+      <div className="place-list-actions">
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => setBatchOpen(true)}
+          disabled={disabled || needsArea || adding}
+        >
+          {t('form.addBatch')}
+        </button>
+        {places.length > 0 && (
+          <button
+            type="button"
+            className="link-button link-button-danger"
+            onClick={clearPlaces}
+            disabled={disabled || adding}
+          >
+            {t('form.clearPlaces')}
+          </button>
+        )}
+      </div>
 
       {batchOpen && (
         <BatchAddDialog
@@ -197,6 +227,28 @@ function PlaceList({ places, onChange, onAdd, disabled, needsArea }) {
                   disabled={disabled}
                   ariaLabel={t('form.visitTime', { name: place.name })}
                 />
+                <span className="place-hours">
+                  <span className="place-hours-label">{t('form.hours')}</span>
+                  <input
+                    type="time"
+                    value={place.opens ?? ''}
+                    onChange={(event) => setHours(place.id, 'opens', event.target.value)}
+                    disabled={disabled}
+                    aria-label={t('form.opensAt', { name: place.name })}
+                  />
+                  –
+                  <input
+                    type="time"
+                    className={
+                      hoursInvalid(place) ? 'visit-time-invalid' : undefined
+                    }
+                    value={place.closes ?? ''}
+                    onChange={(event) => setHours(place.id, 'closes', event.target.value)}
+                    disabled={disabled}
+                    aria-label={t('form.closesAt', { name: place.name })}
+                    aria-invalid={hoursInvalid(place) ? 'true' : undefined}
+                  />
+                </span>
                 <span className="place-actions">
                   <button
                     type="button"

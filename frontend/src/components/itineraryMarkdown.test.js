@@ -1,3 +1,4 @@
+import { formatStopTimes, formatTime } from './format';
 import { itineraryToMarkdown, markdownFilename } from './itineraryMarkdown';
 
 // The real `t` for the keys the exporter touches, so the tests fail if a key
@@ -13,8 +14,8 @@ const STRINGS = {
   'results.days': 'days',
   'results.day': 'Day {day}',
   'results.backTo': 'Back to {name}',
-  'results.arrive': 'arrive {time}',
   'results.stay': 'stay {duration}',
+  'results.wait': 'wait {duration} for opening',
   'results.visits': 'at places',
   'mode.walking': 'walking',
   'mode.driving': 'driving',
@@ -216,6 +217,85 @@ test('a depot with no visit time gets no stay annotation', () => {
   const markdown = itineraryToMarkdown(looping, { area: 'Roma', t });
   expect(markdown).toContain('1. **Hotel**\n');
   expect(markdown).toContain('2. **Pantheon** — _stay 1 h 00 min_');
+});
+
+test('each stop shows when it is reached and left, each leg only the journey', () => {
+  const timed = {
+    ...singleDay,
+    days: [
+      {
+        ...singleDay.days[0],
+        waypoints: [
+          {
+            name: 'Hotel',
+            lat: 41.9,
+            lon: 12.5,
+            visit_seconds: 300,
+            arrival: '2026-08-04T09:00:00',
+            departure: '2026-08-04T09:05:00',
+          },
+          {
+            name: 'Pantheon',
+            lat: 41.898,
+            lon: 12.476,
+            visit_seconds: 3600,
+            arrival: '2026-08-04T09:17:00',
+            departure: '2026-08-04T10:17:00',
+          },
+          {
+            name: 'Hotel',
+            lat: 41.9,
+            lon: 12.5,
+            visit_seconds: 300,
+            arrival: '2026-08-04T10:29:00',
+            departure: '2026-08-04T10:34:00',
+          },
+        ],
+        route_details: [leg(), leg()],
+      },
+    ],
+  };
+
+  const markdown = itineraryToMarkdown(timed, { area: 'Roma', t });
+  const span = (from, to) =>
+    `${formatTime(`2026-08-04T${from}:00`)} → ${formatTime(`2026-08-04T${to}:00`)}`;
+  expect(markdown).toContain(`1. **Hotel** — ${span('09:00', '09:05')} · _stay 5 min_`);
+  expect(markdown).toContain(`2. **Pantheon** — ${span('09:17', '10:17')} · _stay 1 h 00 min_`);
+  // The start and end places count their stay, the return to a loop's start included.
+  expect(markdown).toContain(`- ↩ Back to Hotel — ${span('10:29', '10:34')} · _stay 5 min_`);
+  expect(markdown).toContain('   - 🚶 walking · 12 min · 900 m\n');
+});
+
+test('a wait for a place to open is shown next to the stay', () => {
+  const waiting = {
+    ...singleDay,
+    days: [
+      {
+        ...singleDay.days[0],
+        waypoints: [
+          { name: 'Colosseo', lat: 41.89, lon: 12.49, visit_seconds: 0 },
+          {
+            name: 'Musei Vaticani',
+            lat: 41.906,
+            lon: 12.454,
+            visit_seconds: 7200,
+            wait_seconds: 900,
+          },
+        ],
+      },
+    ],
+  };
+
+  const markdown = itineraryToMarkdown(waiting, { area: 'Roma', t });
+  expect(markdown).toContain(
+    '2. **Musei Vaticani** — _stay 2 h 00 min · wait 15 min for opening_'
+  );
+});
+
+test('a stop with no stay shows a single time', () => {
+  const at = '2026-08-04T09:00:00';
+  expect(formatStopTimes({ arrival: at, departure: at })).toBe(formatTime(at));
+  expect(formatStopTimes({ name: 'Untimed' })).toBeNull();
 });
 
 test('an itinerary with no visit time is unchanged', () => {

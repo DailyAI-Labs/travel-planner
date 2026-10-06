@@ -1,8 +1,10 @@
 import { itineraryFilename } from './filename';
 import {
   describeLegNote,
+  describeStay,
   formatDistance,
   formatDuration,
+  formatStopTimes,
   formatTime,
   isLoop,
 } from './format';
@@ -75,15 +77,15 @@ export function itineraryToMarkdown(itinerary, { area, t }) {
     waypoints.forEach((point, index) => {
       // The return to the start is not an extra place to visit.
       const isReturn = loop && index === waypoints.length - 1;
+      const stay = describeStay(point, t);
+      const schedule = [formatStopTimes(point), stay && `_${stay}_`].filter(
+        Boolean
+      );
+      const suffix = schedule.length ? ` — ${schedule.join(' · ')}` : '';
       if (isReturn) {
-        lines.push(`- ↩ ${t('results.backTo', { name: point.name })}`);
+        lines.push(`- ↩ ${t('results.backTo', { name: point.name })}${suffix}`);
       } else {
-        const stay = point.visit_seconds
-          ? ` — _${t('results.stay', {
-              duration: formatDuration(point.visit_seconds),
-            })}_`
-          : '';
-        lines.push(`${index + 1}. **${point.name}**${stay}`);
+        lines.push(`${index + 1}. **${point.name}**${suffix}`);
       }
 
       const leg = legs[index];
@@ -93,7 +95,6 @@ export function itineraryToMarkdown(itinerary, { area, t }) {
         `${MODE_ICON[leg.mode] || '➜'} ${t(`mode.${leg.mode}`)}`,
         formatDuration(leg.travel_time_seconds),
         formatDistance(leg.distance_meters),
-        t('results.arrive', { time: formatTime(leg.estimated_arrival) }),
       ].join(' · ');
       lines.push(`   - ${detail}`);
       const note = describeLegNote(leg, t);

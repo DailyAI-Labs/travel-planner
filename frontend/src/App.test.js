@@ -227,6 +227,29 @@ test('places from a pasted list that cannot be found stay in the box', async () 
   expect(screen.getByText('Pantheon, Somewhere')).toBeInTheDocument();
 });
 
+test('a pasted list fills in each stay and opening hours', async () => {
+  renderApp();
+  await setCity('Roma');
+
+  fireEvent.click(screen.getByRole('button', { name: /paste a whole list/i }));
+  const box = screen.getByRole('textbox', { name: /paste your list/i });
+  fireEvent.change(box, {
+    target: { value: 'Colosseo | 1h30 | 9:00-19:00\nPantheon | 15m\nTrevi | whenever' },
+  });
+
+  expect(screen.getByText(/2 places ready to add/i)).toBeInTheDocument();
+  expect(screen.getByText(/details not understood for trevi/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /add 2 places/i }));
+
+  // The unreadable line is not added, and goes back in the box as pasted.
+  await waitFor(() => expect(box).toHaveValue('Trevi | whenever'));
+  expect(screen.getByLabelText('Time at Colosseo')).toHaveValue('1h 30m');
+  expect(screen.getByLabelText(/colosseo opens at/i)).toHaveValue('09:00');
+  expect(screen.getByLabelText(/colosseo closes at/i)).toHaveValue('19:00');
+  expect(screen.getByLabelText('Time at Pantheon')).toHaveValue('15m');
+  expect(screen.getByLabelText(/pantheon opens at/i)).toHaveValue('');
+});
+
 test('the batch dialog can be dismissed with Escape', async () => {
   renderApp();
   await setCity('Roma');
@@ -297,13 +320,70 @@ test('the distance field targets the threshold of the selected mode', async () =
   renderApp();
   await fillValidTrip();
 
+  // Typed in kilometres, sent in meters.
   fireEvent.change(screen.getByLabelText(/longest stretch you will walk/i), {
-    target: { value: '2500' },
+    target: { value: '2.5' },
   });
   expect(await submitAndReadBody()).toMatchObject({
     max_walking_distance: 2500,
     max_cycling_distance: 5000,
   });
+});
+
+test('opening hours are sent per place, and the start time without an offset', async () => {
+  renderApp();
+  await fillValidTrip();
+
+  fireEvent.change(screen.getByLabelText(/big ben opens at/i), {
+    target: { value: '10:00' },
+  });
+  fireEvent.change(screen.getByLabelText(/big ben closes at/i), {
+    target: { value: '17:30' },
+  });
+
+  const body = await submitAndReadBody();
+  expect(body.opening_hours).toEqual([{ opens: '10:00', closes: '17:30' }, null]);
+  // Opening hours are local wall-clock, so the start time must be too.
+  expect(body.start_time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00$/);
+});
+
+test('a place closing before it opens blocks planning', async () => {
+  renderApp();
+  await fillValidTrip();
+
+  fireEvent.change(screen.getByLabelText(/big ben opens at/i), {
+    target: { value: '18:00' },
+  });
+  fireEvent.change(screen.getByLabelText(/big ben closes at/i), {
+    target: { value: '09:00' },
+  });
+
+  expect(screen.getByText(/big ben closes no later than it opens/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /plan my route/i })).toBeDisabled();
+});
+
+test('walking allows 2 km by default', async () => {
+  renderApp();
+  await fillValidTrip();
+
+  expect(await submitAndReadBody()).toMatchObject({ max_walking_distance: 2000 });
+});
+
+test('clear all empties the place list once confirmed', async () => {
+  renderApp();
+  await fillValidTrip();
+  const confirm = jest.spyOn(window, 'confirm');
+
+  confirm.mockReturnValueOnce(false);
+  fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
+  expect(screen.getAllByLabelText(/^time at /i).length).toBeGreaterThan(0);
+
+  confirm.mockReturnValueOnce(true);
+  fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
+  expect(screen.queryAllByLabelText(/^time at /i)).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: /clear all/i })).not.toBeInTheDocument();
+
+  confirm.mockRestore();
 });
 
 test('same start and finish is planned as a round trip', async () => {

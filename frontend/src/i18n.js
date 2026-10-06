@@ -32,9 +32,12 @@ const STRINGS = {
     'form.addPlace': 'Add a place, e.g. Tower Bridge',
     'form.add': 'Add',
     'form.addBatch': 'Paste a whole list instead',
+    'form.clearPlaces': 'Clear all',
+    'form.clearPlacesConfirm': 'Remove all {count} places?',
     'batch.title': 'Paste your list of places',
-    'batch.help': 'One place per line. Bullets, dashes and numbering are stripped for you.',
-    'batch.placeholder': '- Colosseum\n- Trevi Fountain\n- Pantheon',
+    'batch.help': 'One place per line. Bullets, dashes and numbering are stripped for you. Optionally add the stay and opening hours after a pipe: Colosseum | 1h30 | 9:00-19:00.',
+    'batch.placeholder': '- Colosseum | 1h30 | 9:00-19:00\n- Trevi Fountain | 15m\n- Pantheon | 1h | 9-19',
+    'batch.unreadable': 'Details not understood for {names}: use a stay like 45m or 1h30, and hours like 9:00-19:00. These stay in the box.',
     'batch.detected': '{count} places ready to add',
     'batch.detectedNone': 'Nothing detected yet',
     'batch.duplicates': '{count} already in your list',
@@ -56,8 +59,8 @@ const STRINGS = {
     'form.roundTrip': 'Round trip: you end where you started.',
     'form.roundTripDay': 'Day {day} is a round trip.',
     'form.startTime': 'Start time',
-    'form.maxWalk': 'Longest stretch you will walk (m)',
-    'form.maxCycle': 'Longest stretch you will cycle (m)',
+    'form.maxWalk': 'Longest stretch you will walk (km)',
+    'form.maxCycle': 'Longest stretch you will cycle (km)',
     'form.submit': 'Plan my route',
     'form.submitting': 'Planning…',
 
@@ -74,6 +77,13 @@ const STRINGS = {
       'Time at these places adds up to {needed_hours} h, which does not fit in {days} day(s) of {budget_hours} h — and that is before any travel. Allow at least {minimum_days} day(s), or shorten some visits.',
     'error.dayBudgetSolver':
       'Travel plus time at these places does not fit in {days} day(s) of {budget_hours} h. Add a day, or shorten some visits.',
+    'error.hoursInvalid': '{name} closes no later than it opens — check its opening hours.',
+    'error.closesBeforeStart':
+      '{name} closes at {closes}, before the day starts at {start}. Start earlier or remove it.',
+    'error.openingTooShort':
+      '{name} is open for less than the {minutes} min you plan to spend there. Shorten the visit or check its opening hours.',
+    'error.openingConflict':
+      'No order fits every place within its opening hours in {days} day(s) of {budget_hours} h. Add a day, start earlier, or shorten some visits.',
     'error.city': 'Enter the city or region.',
     'error.places': 'Add at least two places.',
     'error.daysTooMany':
@@ -95,12 +105,15 @@ const STRINGS = {
       '1 stretch exceeds your distance limit — its time assumes a car.',
     'results.overLimitMany':
       '{count} stretches exceed your distance limit — their times assume a car.',
-    'results.arrive': 'arrive {time}',
     'results.stay': 'stay {duration}',
+    'results.wait': 'wait {duration} for opening',
     'results.visits': 'at places',
     'form.visitTime': 'Time at {name}',
+    'form.hours': 'Open',
+    'form.opensAt': '{name} opens at',
+    'form.closesAt': '{name} closes at',
     'form.visitTimeHint':
-      'Time at each place, next to its name — 45m, 1h30, 2h. Travel plus visits is capped at 16 h a day.',
+      'Time at each place, next to its name — 45m, 1h30, 2h. Start and end places count too: set 0 for one you only set off from. Opening hours are optional — leave them empty for a place that is always open. Travel plus visits is capped at 16 h a day.',
 
     'map.caption':
       'Lines show the visit order as straight connections, not the actual streets taken. Red dashes mark stretches too far to walk or cycle.',
@@ -155,9 +168,12 @@ const STRINGS = {
     'form.addPlace': 'Aggiungi un luogo, es. Fontana di Trevi',
     'form.add': 'Aggiungi',
     'form.addBatch': 'Incolla un elenco intero',
+    'form.clearPlaces': 'Svuota elenco',
+    'form.clearPlacesConfirm': 'Rimuovere tutti i {count} luoghi?',
     'batch.title': 'Incolla il tuo elenco di luoghi',
-    'batch.help': 'Un luogo per riga. Trattini, punti elenco e numerazione vengono rimossi in automatico.',
-    'batch.placeholder': '- Colosseo\n- Fontana di Trevi\n- Pantheon',
+    'batch.help': 'Un luogo per riga. Trattini, punti elenco e numerazione vengono rimossi in automatico. Se vuoi, aggiungi sosta e orari dopo una barra verticale: Colosseo | 1h30 | 9:00-19:00.',
+    'batch.placeholder': '- Colosseo | 1h30 | 9:00-19:00\n- Fontana di Trevi | 15m\n- Pantheon | 1h | 9-19',
+    'batch.unreadable': 'Dettagli non riconosciuti per {names}: usa una sosta come 45m o 1h30 e orari come 9:00-19:00. Restano nel riquadro.',
     'batch.detected': '{count} luoghi pronti da aggiungere',
     'batch.detectedNone': 'Nessun luogo rilevato',
     'batch.duplicates': '{count} già nella tua lista',
@@ -179,8 +195,8 @@ const STRINGS = {
     'form.roundTrip': 'Percorso ad anello: torni al punto di partenza.',
     'form.roundTripDay': 'Il giorno {day} è un anello.',
     'form.startTime': 'Ora di partenza',
-    'form.maxWalk': 'Tratta più lunga che percorri a piedi (m)',
-    'form.maxCycle': 'Tratta più lunga che percorri in bici (m)',
+    'form.maxWalk': 'Tratta più lunga che percorri a piedi (km)',
+    'form.maxCycle': 'Tratta più lunga che percorri in bici (km)',
     'form.submit': 'Calcola il percorso',
     'form.submitting': 'Calcolo in corso…',
 
@@ -197,6 +213,13 @@ const STRINGS = {
       'Le soste nei luoghi sommano {needed_hours} h e non entrano in {days} giorno/i da {budget_hours} h, senza contare gli spostamenti. Serve almeno {minimum_days} giorno/i, oppure accorcia qualche sosta.',
     'error.dayBudgetSolver':
       'Spostamenti e soste non entrano in {days} giorno/i da {budget_hours} h. Aggiungi un giorno oppure accorcia qualche sosta.',
+    'error.hoursInvalid': '{name} chiude prima di aprire: controlla i suoi orari.',
+    'error.closesBeforeStart':
+      '{name} chiude alle {closes}, prima dell’inizio della giornata alle {start}. Parti prima oppure rimuovilo.',
+    'error.openingTooShort':
+      '{name} resta aperto meno dei {minutes} min di sosta previsti. Accorcia la sosta o controlla gli orari.',
+    'error.openingConflict':
+      'Nessun ordine rispetta gli orari di apertura di tutti i luoghi in {days} giorno/i da {budget_hours} h. Aggiungi un giorno, parti prima oppure accorcia qualche sosta.',
     'error.city': 'Inserisci la città o la regione.',
     'error.places': 'Aggiungi almeno due luoghi.',
     'error.daysTooMany':
@@ -218,12 +241,15 @@ const STRINGS = {
       '1 tratta supera il tuo limite di distanza: il tempo indicato è quello in auto.',
     'results.overLimitMany':
       '{count} tratte superano il tuo limite di distanza: i tempi indicati sono quelli in auto.',
-    'results.arrive': 'arrivo {time}',
     'results.stay': 'sosta {duration}',
+    'results.wait': 'attesa apertura {duration}',
     'results.visits': 'nei luoghi',
     'form.visitTime': 'Tempo a {name}',
+    'form.hours': 'Aperto',
+    'form.opensAt': 'Apertura di {name}',
+    'form.closesAt': 'Chiusura di {name}',
     'form.visitTimeHint':
-      'Tempo in ogni luogo, accanto al nome — 45m, 1h30, 2h. Spostamenti e soste insieme non superano le 16 h al giorno.',
+      'Tempo in ogni luogo, accanto al nome — 45m, 1h30, 2h. Contano anche partenza e arrivo: metti 0 per un luogo da cui parti soltanto. Gli orari di apertura sono facoltativi: lasciali vuoti se il luogo è sempre aperto. Spostamenti e soste insieme non superano le 16 h al giorno.',
 
     'map.caption':
       'Le linee mostrano l’ordine di visita come collegamenti diretti, non le strade reali. I tratteggi rossi segnano le tratte troppo lunghe per piedi o bici.',

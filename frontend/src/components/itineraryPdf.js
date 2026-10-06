@@ -15,8 +15,10 @@ import { itineraryFilename } from './filename';
 import { dayColour } from './RouteMap';
 import {
   describeLegNote,
+  describeStay,
   formatDistance,
   formatDuration,
+  formatStopTimes,
   formatTime,
   isLoop,
 } from './format';
@@ -293,10 +295,14 @@ function drawStop(state, { day, dayIndex, index, showDayHeading }) {
   style(doc, { size: 10.5, weight: isReturn ? 'normal' : 'bold' });
   const nameLines = wrap(doc, name, TEXT_WIDTH);
 
-  const stay =
-    !isReturn && point.visit_seconds > 0
-      ? t('results.stay', { duration: formatDuration(point.visit_seconds) })
-      : null;
+  const schedule =
+    [
+      // jsPDF's standard fonts are WinAnsi only: an arrow prints as "?".
+      formatStopTimes(point, ' – '),
+      describeStay(point, t),
+    ]
+      .filter(Boolean)
+      .join(' · ') || null;
 
   style(doc, { size: 8.5 });
   const legLines = leg
@@ -306,7 +312,6 @@ function drawStop(state, { day, dayIndex, index, showDayHeading }) {
           t(`mode.${leg.mode}`),
           formatDuration(leg.travel_time_seconds),
           formatDistance(leg.distance_meters),
-          t('results.arrive', { time: formatTime(leg.estimated_arrival) }),
         ].join(' · '),
         TEXT_WIDTH
       )
@@ -316,7 +321,7 @@ function drawStop(state, { day, dayIndex, index, showDayHeading }) {
 
   const height =
     nameLines.length * 5 +
-    (stay ? 4.2 : 0) +
+    (schedule ? 4.2 : 0) +
     legLines.length * 4.4 +
     noteLines.length * 4.2 +
     3.5;
@@ -368,9 +373,9 @@ function drawStop(state, { day, dayIndex, index, showDayHeading }) {
   });
   state.y += nameLines.length * 5;
 
-  if (stay) {
+  if (schedule) {
     style(doc, { size: 8.5, weight: 'italic', colour: COLOUR.muted });
-    write(doc, stay, TEXT_X, state.y + 2.2);
+    write(doc, schedule, TEXT_X, state.y + 2.2);
     state.y += 4.2;
   }
 
