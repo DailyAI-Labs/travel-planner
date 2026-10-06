@@ -6,7 +6,7 @@ and publishes their `Field(description=...)` text in the OpenAPI schema, so
 field semantics live there rather than in the class docstrings.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from enum import Enum
 from typing import Any
 
@@ -29,6 +29,17 @@ class ResolvedPlace(BaseModel):
     name: str
     lat: float
     lon: float
+
+
+class OpeningHours(BaseModel):
+    """When a place can be visited, as local wall-clock times.
+
+    Either end may be omitted: no `opens` means open from the start of the
+    day, no `closes` open until its end. Overnight hours are not supported.
+    """
+
+    opens: time | None = None
+    closes: time | None = None
 
 
 class TravelPlanRequest(BaseModel):
@@ -72,9 +83,20 @@ class TravelPlanRequest(BaseModel):
         default=None,
         description=(
             "Time spent at each place, one entry per entry in `places` and in "
-            "the same order. Omit for a travel-only plan. A place serving as a "
-            "daily start or end contributes nothing, since depots are not "
-            "stops. Travel plus visits is capped at 16 hours per day."
+            "the same order. Omit for a travel-only plan. Daily start and end "
+            "places count too: their time is spent before setting off and "
+            "after arriving, so a round trip spends it at both ends. Travel "
+            "plus visits is capped at 16 hours per day."
+        ),
+    )
+    opening_hours: list[OpeningHours | None] | None = Field(
+        default=None,
+        description=(
+            "When each place can be visited, one entry per entry in `places` "
+            "and in the same order; null for one that is always open. A visit "
+            "starts no earlier than `opens` and is over by `closes`, every day "
+            "alike, and arriving early means waiting. Read against the "
+            "wall-clock time of `start_time`, so send that without an offset."
         ),
     )
     start_time: datetime
@@ -129,22 +151,31 @@ class RouteDetail(BaseModel):
     travel_time_seconds: int
     visit_time_seconds: int = Field(
         default=0,
-        description=(
-            "Time spent at `from_place` before this leg departs. Zero for a "
-            "daily start or end point."
-        ),
+        description="Time spent at `from_place` before this leg departs.",
     )
     distance_meters: int
     estimated_arrival: datetime
 
 
 class Waypoint(BaseModel):
-    """A stop in visit order, with the coordinates needed to plot it."""
+    """A stop in visit order, with the coordinates needed to plot it.
+
+    `arrival` and `departure` are local wall-clock, like the itinerary's other
+    times. The day's first stop arrives at the day's start time; its last
+    departs at the day's end time. `departure` is arrival plus any wait for
+    the place to open plus `visit_seconds`.
+    """
 
     name: str
     lat: float
     lon: float
     visit_seconds: int = 0
+    wait_seconds: int = Field(
+        default=0,
+        description="Time spent waiting for the place to open, before the visit.",
+    )
+    arrival: datetime | None = None
+    departure: datetime | None = None
 
 
 class GeocodeRequest(BaseModel):

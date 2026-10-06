@@ -111,6 +111,11 @@ async def compute_itinerary_async(request: TravelPlanRequest, code: str) -> None
             day_ends=request.day_ends,
             resolved_places=_to_places(request.resolved_places),
             visit_seconds=request.visit_seconds,
+            opening_hours=(
+                [(h.opens, h.closes) if h else None for h in request.opening_hours]
+                if request.opening_hours is not None
+                else None
+            ),
         )
 
         if not itinerary.get("success"):

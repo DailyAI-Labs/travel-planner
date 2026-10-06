@@ -11,7 +11,12 @@ from typing import Any
 
 from app.services.geocoding import GeocodingProvider, Place, get_geocoder
 from app.services.matrices import MatrixProvider, get_matrix_provider
-from app.services.utils import DEFAULT_MODES, optimize_route, validate_places
+from app.services.utils import (
+    DEFAULT_MODES,
+    OpeningHours,
+    optimize_route,
+    validate_places,
+)
 from dotenv import load_dotenv
 
 
@@ -54,7 +59,7 @@ class TravelPlanner:
         start_time: datetime | None = None,
         modes: list[str] = DEFAULT_MODES,
         walking_preference: bool = True,
-        max_walking_distance: int = 1000,
+        max_walking_distance: int = 2000,
         max_cycling_distance: int = 5000,
         area: str | None = None,
         days: int = 1,
@@ -62,6 +67,7 @@ class TravelPlanner:
         day_ends: list[int] | None = None,
         resolved_places: list[Place] | None = None,
         visit_seconds: list[int] | None = None,
+        opening_hours: list[OpeningHours | None] | None = None,
     ) -> dict[str, Any]:
         """
         Plan route: validate places first, then optimize route.
@@ -95,7 +101,7 @@ class TravelPlanner:
             Prefer a human-powered mode wherever one is within range, even
             when driving would be faster, by default True.
         max_walking_distance : int, optional
-            Longest leg to walk, in meters, by default 1000.
+            Longest leg to walk, in meters, by default 2000.
         max_cycling_distance : int, optional
             Longest leg to cycle, in meters, by default 5000. Legs beyond
             both limits are reported as requiring a vehicle.
@@ -120,6 +126,10 @@ class TravelPlanner:
             Time spent at each place, one entry per place and of the same
             length, by default None, meaning a travel-only plan. Travel plus
             visits is capped at DAILY_TIME_BUDGET_SECONDS per day.
+        opening_hours : list[OpeningHours | None] | None, optional
+            When each place can be visited, one entry per place and of the
+            same length, as local wall-clock `(opens, closes)`, by default
+            None, meaning everything is always open. See `optimize_route`.
 
         Returns
         -------
@@ -152,6 +162,25 @@ class TravelPlanner:
                     f"{len(visit_seconds)} for {n_places} places"
                 ),
             }
+
+        if opening_hours is not None:
+            if len(opening_hours) != n_places:
+                return {
+                    "success": False,
+                    "error": (
+                        f"opening_hours must match places: got "
+                        f"{len(opening_hours)} for {n_places} places"
+                    ),
+                }
+            for name, hours in zip(places, opening_hours):
+                if hours and hours[0] and hours[1] and hours[1] <= hours[0]:
+                    return {
+                        "success": False,
+                        "error": (
+                            f"{name} closes ({hours[1]:%H:%M}) no later than "
+                            f"it opens ({hours[0]:%H:%M})"
+                        ),
+                    }
 
         print("=" * 60)
         print("ROUTE OPTIMIZATION WITH VALIDATION")
@@ -192,6 +221,7 @@ class TravelPlanner:
             max_walking_distance,
             max_cycling_distance,
             visit_seconds,
+            opening_hours,
         )
 
         return result

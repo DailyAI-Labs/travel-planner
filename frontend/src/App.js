@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
-// The lettering out of the org logo. The whole composition — globe, plane,
-// suitcase, strapline — is unreadable at the size a header gives it.
-import logoMark from './logo-dai-mark.png';
 import { checkHealth, fetchItinerary, geocodePlace, submitItinerary } from './api';
 import { LANGUAGES, useI18n } from './i18n';
-import PlaceList, { nextPlaceId } from './components/PlaceList';
+import PlaceList, { hoursInvalid, nextPlaceId } from './components/PlaceList';
 import RouteMap from './components/RouteMap';
 import Itinerary from './components/Itinerary';
 import ExportMarkdownButton from './components/ExportMarkdownButton';
@@ -74,6 +71,14 @@ function describeFailure(plan, t) {
       : 'error.dayBudgetSolver';
     return t(key, plan.error_params);
   }
+  const OPENING_KEY = {
+    closes_before_start: 'error.closesBeforeStart',
+    opening_window_too_short: 'error.openingTooShort',
+    opening_hours_conflict: 'error.openingConflict',
+  };
+  if (OPENING_KEY[plan.error_code] && plan.error_params) {
+    return t(OPENING_KEY[plan.error_code], plan.error_params);
+  }
   return plan.error || t('results.failed');
 }
 
@@ -89,8 +94,9 @@ function App() {
   // One entry per day; each holds the place id to start from and end at.
   const [dayPoints, setDayPoints] = useState([{ startId: '', endId: '' }]);
   const [mode, setMode] = useState('walking');
-  const [maxWalking, setMaxWalking] = useState(1000);
-  const [maxCycling, setMaxCycling] = useState(5000);
+  // Kilometres in the form, meters on the wire.
+  const [maxWalkingKm, setMaxWalkingKm] = useState(2);
+  const [maxCyclingKm, setMaxCyclingKm] = useState(5);
   const [startTime, setStartTime] = useState(defaultStartTime);
 
   const [code, setCode] = useState(null);
@@ -193,8 +199,9 @@ function App() {
    *
    * A name that resolves to nothing never becomes a list entry: the caller
    * gets the error and the user can correct the spelling straight away.
+   * `details` carries a stay and opening hours read from a pasted list.
    */
-  const addPlace = async (name) => {
+  const addPlace = async (name, details = {}) => {
     const result = await geocodePlace(name, committedArea);
     if (!result.found) return { ok: false, error: result.error };
 
@@ -206,7 +213,9 @@ function App() {
         resolvedFor: committedArea,
         resolved: result.place,
         error: null,
-        visitMinutes: DEFAULT_VISIT_MINUTES,
+        visitMinutes: details.visitMinutes ?? DEFAULT_VISIT_MINUTES,
+        opens: details.opens ?? '',
+        closes: details.closes ?? '',
       },
     ]);
     return { ok: true };
@@ -320,6 +329,8 @@ function App() {
       });
     }
     if (resolvedForArea.length !== places.length) return t('error.resolving');
+    const badHours = places.find(hoursInvalid);
+    if (badHours) return t('error.hoursInvalid', { name: badHours.name });
     // Start and end points are not stops: a day ending elsewhere is already a
     // journey, but a day looping back shows nothing without a place of its own.
     const loopDays = dayStarts.filter((start, i) => start === dayEnds[i]).length;
@@ -349,19 +360,26 @@ function App() {
           lon: place.resolved.lon,
         })),
         visit_seconds: places.map((place) => (place.visitMinutes ?? 0) * 60),
+        opening_hours: places.map((place) =>
+          place.opens || place.closes
+            ? { opens: place.opens || null, closes: place.closes || null }
+            : null
+        ),
         area: committedArea,
         days,
         start_idx: dayStarts[0],
         end_idx: dayEnds[0],
         day_starts: dayStarts,
         day_ends: dayEnds,
-        start_time: new Date(startTime).toISOString(),
+        // Local wall-clock, no offset: opening hours are read against it, and
+        // "opens 10:00" means 10:00 where the place is, not in UTC.
+        start_time: `${startTime}:00`,
         modes: [mode],
         // Always on: the traveller picked a mode, so honour it rather than
         // silently switching them to whatever is fastest.
         walking_preference: true,
-        max_walking_distance: Number(maxWalking),
-        max_cycling_distance: Number(maxCycling),
+        max_walking_distance: Math.round(Number(maxWalkingKm) * 1000),
+        max_cycling_distance: Math.round(Number(maxCyclingKm) * 1000),
       });
       setCode(response.code);
       setPolling(true);
@@ -381,22 +399,13 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="brand">
-          <img
-            className="brand-mark"
-            src={logoMark}
-            alt="dAI Labs"
-            width="48"
-            height="48"
-          />
-          <div>
-            <h1>{t('app.title')}</h1>
-            <p className="tagline">
-              {t('app.tagline1')}
-              <br />
-              {t('app.tagline2')}
-            </p>
-          </div>
+        <div>
+          <h1>{t('app.title')}</h1>
+          <p className="tagline">
+            {t('app.tagline1')}
+            <br />
+            {t('app.tagline2')}
+          </p>
         </div>
         <div className="header-actions">
           <select
@@ -582,11 +591,12 @@ function App() {
                   <input
                     type="number"
                     min="0"
-                    value={mode === 'bicycle' ? maxCycling : maxWalking}
+                    step="0.5"
+                    value={mode === 'bicycle' ? maxCyclingKm : maxWalkingKm}
                     onChange={(event) =>
                       mode === 'bicycle'
-                        ? setMaxCycling(event.target.value)
-                        : setMaxWalking(event.target.value)
+                        ? setMaxCyclingKm(event.target.value)
+                        : setMaxWalkingKm(event.target.value)
                     }
                     disabled={polling}
                   />

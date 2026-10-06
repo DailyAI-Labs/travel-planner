@@ -1,6 +1,6 @@
 /** Compact durations: what people type into a small box, and what we show back. */
 
-export const DEFAULT_VISIT_MINUTES = 60;
+export const DEFAULT_VISIT_MINUTES = 5;
 
 // Bare number, "1h30", "1h", "45m", "1:30", "1.5h", and the comma decimal an
 // Italian keyboard produces. Anything else is rejected rather than guessed at.
@@ -34,9 +34,14 @@ export function parseDuration(text) {
   return null;
 }
 
-/** 90 becomes "1h 30m"; 120 becomes "2h"; 0 becomes "" so the box reads empty. */
+/**
+ * 90 becomes "1h 30m"; 120 becomes "2h"; 0 becomes "0m".
+ *
+ * Zero is spelled out rather than left blank: an empty box shows its
+ * placeholder, which reads as a value the traveller never chose.
+ */
 export function formatDuration(minutes) {
-  if (!minutes) return '';
+  if (!minutes) return '0m';
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   if (!hours) return `${rest}m`;

@@ -4,6 +4,10 @@
 
 Travel planning application to organize trips by optimizing itineraries.
 
+**Try it live: [dai-travel-planner-web.onrender.com](https://dai-travel-planner-web.onrender.com)**
+— hosted on Render's free plan, so the first request after a quiet spell can
+take up to a minute while the API wakes up.
+
 ## Tech stack
 
 | Layer | Choice |
@@ -199,7 +203,7 @@ objective was identical at 500 ms and at 30 s, so it is set to one second. It
 is `SOLVER_TIME_LIMIT_MS` in `backend/app/services/utils.py` — a module
 constant, not an environment variable, so changing it means editing the source.
 
-Start and end places are not stops, so they do not count towards a day's load.
+Start and end places do not count as stops when days are balanced.
 A day that goes from one place to a different one is already a journey even
 with nothing in between; a day that loops back to its own start needs at least
 one place of its own, and the request is rejected when there are not enough to
@@ -210,19 +214,41 @@ go round.
 `visit_seconds` gives every place its own dwell time, one entry per entry in
 `places` and in the same order; omit it for a travel-only plan. The UI shows a
 box next to each place and accepts what people actually type — `45m`, `1h30`,
-`1:30`, `1.5h`, `2h`, or a bare number of minutes — defaulting to one hour
-each.
+`1:30`, `1.5h`, `2h`, or a bare number of minutes — defaulting to five
+minutes each.
 
 Dwell time changes what a day means rather than just annotating it: every
-`estimated_arrival` and each day's `estimated_end_time` account for it, each
-leg reports the `visit_time_seconds` spent at its origin before departing, and
+`estimated_arrival` and each day's `estimated_end_time` account for it, every
+waypoint carries its own `arrival` and `departure`, each leg reports the `visit_time_seconds` spent at its origin before departing, and
 the itinerary carries `total_visit_time_seconds` alongside the travel total.
 Days are still balanced on travel time alone, since that is the part reordering
 can actually improve.
 
-Start and end places contribute nothing, even if you give them a time. They are
-depots rather than stops, so the hotel you leave from and return to is not
-somewhere you "spend" two hours.
+Start and end places count like any other: the day starts on arriving at the
+first place and ends on leaving the last, so their time is spent before setting
+off and after arriving. A day that loops back to its start spends that time at
+both ends. Give a place 0 if you only set off from it — or keep the small
+default as a margin.
+
+### Opening hours
+
+`opening_hours` says when each place can be visited, one entry per entry in
+`places`: `{"opens": "10:00", "closes": "18:00"}`, either end optional, or
+`null` for a place that is always open. The UI shows two time boxes under each
+place, left empty by default. A visit starts no earlier than `opens` and is
+over by `closes`, the same every day. Overnight hours are not supported.
+
+The solver picks an order that respects every window. When arriving early is
+unavoidable, the stop waits for the doors to open: the waypoint reports it as
+`wait_seconds` and the UI shows it next to the stay. Each day's length counts
+too, so the solver prefers orders that arrive as places open. Opening hours
+are read against the wall-clock time of `start_time`, so send it without a UTC
+offset, as the UI does.
+
+A place that cannot be visited at all is refused by name before solving:
+`closes_before_start` when it closes before the day starts, and
+`opening_window_too_short` when it is open for less than the time to spend
+there. When no order fits every window, the error is `opening_hours_conflict`.
 
 **Travel plus visits is capped at 16 hours per day.** That is 24 hours minus 8
 asleep, fixed rather than configurable — a ceiling nobody needs to tune, and
@@ -244,8 +270,9 @@ For walking and cycling, a leg longer than its threshold —
 another mode. It comes back with `requires_vehicle: true` and a note naming
 what you asked for, e.g. *"Too far to walk: take public transport or a car"*.
 Raise the threshold if you are willing to go further on your own.
-`max_walking_distance` is required on the request and the UI sends 1000 m;
-`max_cycling_distance` may be omitted and defaults to 5000 m.
+`max_walking_distance` is required on the request; the UI asks for it in
+kilometres and sends 2 km (2000 m) unless changed. `max_cycling_distance` may
+be omitted and defaults to 5000 m.
 
 Those flagged legs are still costed with driving times, which is why the
 driving matrix is fetched even when you did not ask for it. Without a real
@@ -310,6 +337,11 @@ stay inside names like `Piazza San Marco, Venezia`. It shows how many places it
 found before you commit, skips ones already in your list, and keeps any it
 could not resolve in the box so you can fix the spelling and retry.
 
+Each line can also carry its stay and opening hours after pipes, in either
+order: `Colosseo | 1h30 | 9:00-19:00`, `Pantheon | 9-19`, `Trevi | 15m`.
+Opening hours may give one end only (`10:00-`, `-18:00`). A line whose details
+cannot be read is not added; it stays in the box, as pasted, to be corrected.
+
 The interface is available in English and Italian; the selector is in the
 header and the choice is remembered.
 
@@ -317,7 +349,8 @@ Example
 
 - City or region: `London`
 - Places: `Big Ben`, `Tower Bridge`, `Buckingham Palace`, `Tower of London`
-- Time at each place: `1h` by default, editable per place
+- Time at each place: `5m` by default, editable per place
+- Opening hours: optional, under each place
 - Getting around: `On foot`
 - Days: `1` — raise it and each day gets its own start and finish selectors
 
