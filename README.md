@@ -2,11 +2,18 @@
 
 # Travel Planner
 
-Travel planning application to organize trips by optimizing itineraries.
+A travel planning application that organizes trips by optimizing itineraries.
+You add places, and they are ordered to minimize travel time. Every place has
+its own dwell time (e.g. `45m`, `1h30`, `1:30`, `1.5h`, `2h`) and optional
+opening hours (e.g. `10:00-18:00`). A trip can be split across days, which are
+balanced on travel time. Three modes are supported — `walking`, `bicycle`
+and `driving` — with a maximum walking distance of 2 km by default.
+The itinerary can be exported as Markdown or PDF.
 
 **Try it live: [dai-travel-planner-web.onrender.com](https://dai-travel-planner-web.onrender.com)**
-— hosted on Render's free plan, so the first request after a quiet spell can
-take up to a minute while the API wakes up.
+
+Note: it is hosted on Render's free plan, so the first request after a period
+of inactivity can take up to a minute while the API wakes up.
 
 ## Tech stack
 
@@ -23,13 +30,11 @@ self-hostable, and cost nothing per request.
 
 ## Contents
 
-- [Quick start](#quick-start)
-- [Geocoding](#geocoding) — providers, why `area` matters, self-hosting Photon
-- [Travel times and distances](#travel-times-and-distances) — splitting across
-  days, time at each place, modes, distance limits, self-hosting Valhalla
-- [The interface](#the-interface) — planning a trip, exporting it
+- [Quick start](#quick-start) — running locally with `run.sh` or by hand
+  - [Self-hosting Photon](#self-hosting-photon)
+  - [Self-hosting Valhalla](#self-hosting-valhalla)
 - [API reference](#api-reference) — endpoints and an example request
-- [Development](#development) — running the halves separately, tests, tunables
+- [Development](#development) — reload, tests, configuration and constants
 
 ## Quick start
 
@@ -53,13 +58,8 @@ Ports and browser behaviour are overridable:
 BACKEND_PORT=8010 FRONTEND_PORT=3010 OPEN_BROWSER=0 ./run.sh
 ```
 
-**`run.sh` requires Linux, macOS or WSL.** It stops its two servers with POSIX
-signals and process groups, which Windows does not have, and it relies on
-`lsof` and `pgrep`, which Git Bash does not ship. On native Windows, start the
-two halves separately as below — that works everywhere. The script checks for
-its tools up front and says so rather than failing halfway.
-
-To run the two halves yourself instead:
+**`run.sh` requires Linux, macOS or WSL.** The backend and frontend can also be
+started separately, which works on any system, including **Windows**:
 
 ```
 # 1. Backend
@@ -73,73 +73,14 @@ python backend/main.py                    # http://localhost:8000
 cd frontend && npm install && npm start   # http://localhost:3000
 ```
 
-Those public endpoints — `photon.komoot.io` for geocoding and
-`valhalla1.openstreetmap.de`, run by FOSSGIS for the OpenStreetMap project,
-for routing — are community services with fair-use expectations. They are
-right for development and personal use, and wrong for production load. When
-you outgrow them, `docker compose up -d` runs both locally and you change two
-URLs in `backend/.env`; nothing else moves.
-
-Google remains available as an opt-in alternative for either service — it is
-the only option that offers live traffic and public transport, and the only
-one that is billed.
-
-## Geocoding
-
-Place names are resolved to coordinates by an open source, OpenStreetMap-backed
-geocoder. The provider is chosen with the `GEOCODER` environment variable — see
-`backend/.env.example` for all settings.
-
-| Provider | `GEOCODER` | Notes |
-|---|---|---|
-| Photon | `photon` | Default. Prebuilt index, so self-hosting needs no database import |
-| Nominatim | `nominatim` | Comparable accuracy; self-hosting needs PostgreSQL + PostGIS and a full OSM import |
-| Google | `google` | Requires a billable `GCP_API_KEY` |
-
-Chain providers with `+` to fall back when the first finds nothing, e.g.
-`GEOCODER=photon+nominatim`.
-
-### Validate as you type
-
-`POST /api/v1/geocode` resolves a single place name, so a client can check each
-one as it is entered instead of discovering a bad match inside a finished
-itinerary. The UI does this on every add, shows what the geocoder matched, and
-re-checks everything when the city changes.
-
-Feed the results back as `resolved_places` on `/compute_itinerary` and the
-planner skips geocoding altogether — the same four-place Rome trip completes in
-about 1 second instead of 4, since the rate-limited lookups already happened
-while you were typing.
-
-Note that a result is not the same as a *good* result: `qwertyuiop asdfgh` with
-`area: Roma` resolves happily to a school in Casablanca. Photon almost always
-returns something, which is exactly why showing the matched name matters.
-
-### Always pass an `area`
-
-OpenStreetMap geocoders match on structured map tags rather than a query log,
-so a bare landmark name is frequently ambiguous worldwide. The optional `area`
-field in the request is what disambiguates it, and it matters a lot:
-
-| Query | Result |
-|---|---|
-| `Big Ben` | a hill in Queensland, Australia |
-| `Big Ben` + `area: London` | Big Ben, Bridge Street, London |
-| `Eiffel Tower` | Eiffel Tower, Alberta, Canada |
-| `Eiffel Tower` + `area: Paris` | Tour Eiffel, Paris |
-
-Across 20 landmarks in 8 cities, Photon resolved 20/20 within 200 m when given
-an `area`. Note also that parenthesised text derails these geocoders —
-`Big Ben (Elizabeth Tower)` alone matches a replica in Cambodia — so the
-backend strips parentheses and retries before giving up.
+The public endpoints `photon.komoot.io` (geocoding) and
+`valhalla1.openstreetmap.de` (travel times and distances) are community
+services with fair-use expectations: fine for development and personal use,
+not for production load. `docker compose up -d` hosts both locally.
 
 ### Self-hosting Photon
 
-The public endpoints are fine for development but are not production services:
-Nominatim caps callers at 1 request/second and forbids bulk querying, and
-Komoot provides `photon.komoot.io` without an SLA. Self-hosting removes both
-the rate limit and the external dependency, at no per-request cost. It is part
-of `docker compose up -d`; then set in `backend/.env`:
+Part of `docker compose up -d`. Then in `backend/.env`:
 
 ```
 GEOCODER=photon
@@ -154,154 +95,6 @@ place outside the imported extract will not resolve. To avoid the third-party
 image, download the index and jar from the
 [Photon releases](https://github.com/komoot/photon/releases) and run
 `java -jar photon.jar` directly; it serves on port 2322 either way.
-
-## Travel times and distances
-
-The optimizer needs, for every pair of places and every mode, a travel time
-and a distance. Those come from a routing engine chosen with
-`MATRIX_PROVIDER`.
-
-| Provider | `MATRIX_PROVIDER` | Notes |
-|---|---|---|
-| Valhalla | `valhalla` | Default. One instance serves every mode from one set of tiles |
-| Google | `google` | Requires a billable `GCP_API_KEY`. The only option with live traffic and transit |
-
-Valhalla was chosen over OSRM because a single container and a single tile
-build cover driving, walking and cycling, whereas OSRM needs a separately
-preprocessed graph — and therefore a separate service and its own memory
-footprint — per profile. OSRM computes matrices faster, but at the sizes this
-app produces (a handful of places) that advantage is invisible.
-
-### Splitting a trip across days
-
-Set `days` to more than one and the places are clustered into that many days,
-each ordered internally. Every day has its own start and end place via
-`day_starts` and `day_ends`; pointing them all at the same place is how "leave
-from and return to the hotel every day" is expressed.
-
-Under the hood this is one vehicle per day sharing a single distance matrix, so
-extra days cost no extra requests to the routing engine.
-
-**Days are balanced on travel time, not on how many stops they hold.** That is
-what actually makes a day tiring: three sights spread across a city is a harder
-day than six clustered in one quarter. A global span cost penalises the gap
-between the busiest and the quietest day. On six places in Rome over two days,
-this produces one day with four central stops (59 min) and one with a single
-round trip to the Colosseum (57 min) — very different counts, near-identical
-effort. Balancing by count instead gave three and three, and on a deliberately
-lopsided test set left one day carrying eight times the travel of the other.
-
-The balance is a cost rather than a hard cap on purpose: a hard limit on daily
-travel turns into an unexplained "no solution" the moment it cannot be met. A
-separate floor of one stop per day keeps any day from being emptied out, since
-piling everything onto one day genuinely does minimise total travel.
-
-Guided local search never proves optimality, so the solver's time limit is its
-runtime rather than a ceiling on it — set it to 30 s and every multi-day plan
-takes 30 s. Measured on fixed instances up to 40 places over 4 days, the
-objective was identical at 500 ms and at 30 s, so it is set to one second. It
-is `SOLVER_TIME_LIMIT_MS` in `backend/app/services/utils.py` — a module
-constant, not an environment variable, so changing it means editing the source.
-
-Start and end places do not count as stops when days are balanced.
-A day that goes from one place to a different one is already a journey even
-with nothing in between; a day that loops back to its own start needs at least
-one place of its own, and the request is rejected when there are not enough to
-go round.
-
-### Time at each place
-
-`visit_seconds` gives every place its own dwell time, one entry per entry in
-`places` and in the same order; omit it for a travel-only plan. The UI shows a
-box next to each place and accepts what people actually type — `45m`, `1h30`,
-`1:30`, `1.5h`, `2h`, or a bare number of minutes — defaulting to five
-minutes each.
-
-Dwell time changes what a day means rather than just annotating it: every
-`estimated_arrival` and each day's `estimated_end_time` account for it, every
-waypoint carries its own `arrival` and `departure`, each leg reports the `visit_time_seconds` spent at its origin before departing, and
-the itinerary carries `total_visit_time_seconds` alongside the travel total.
-Days are still balanced on travel time alone, since that is the part reordering
-can actually improve.
-
-Start and end places count like any other: the day starts on arriving at the
-first place and ends on leaving the last, so their time is spent before setting
-off and after arriving. A day that loops back to its start spends that time at
-both ends. Give a place 0 if you only set off from it — or keep the small
-default as a margin.
-
-### Opening hours
-
-`opening_hours` says when each place can be visited, one entry per entry in
-`places`: `{"opens": "10:00", "closes": "18:00"}`, either end optional, or
-`null` for a place that is always open. The UI shows two time boxes under each
-place, left empty by default. A visit starts no earlier than `opens` and is
-over by `closes`, the same every day. Overnight hours are not supported.
-
-The solver picks an order that respects every window. When arriving early is
-unavoidable, the stop waits for the doors to open: the waypoint reports it as
-`wait_seconds` and the UI shows it next to the stay. Each day's length counts
-too, so the solver prefers orders that arrive as places open. Opening hours
-are read against the wall-clock time of `start_time`, so send it without a UTC
-offset, as the UI does.
-
-A place that cannot be visited at all is refused by name before solving:
-`closes_before_start` when it closes before the day starts, and
-`opening_window_too_short` when it is open for less than the time to spend
-there. When no order fits every window, the error is `opening_hours_conflict`.
-
-**Travel plus visits is capped at 16 hours per day.** That is 24 hours minus 8
-asleep, fixed rather than configurable — a ceiling nobody needs to tune, and
-one less number to fill in. It is a safety rail, not a target. Being the one
-hard constraint that can make an otherwise well-formed request infeasible, it
-fails loudly rather than as an unexplained "no solution": `error_code` is
-`day_budget_exceeded` and `error_params` carries the hours needed, the hours
-available, and the smallest number of days that would fit. Visit time on its
-own is checked before any matrix is fetched, so an impossible trip fails in
-milliseconds; the combined total is enforced by the solver.
-
-### Modes
-
-You travel one way per trip: `walking`, `bicycle`, or `driving`. The UI offers
-these as a single choice, and walking is the default.
-
-For walking and cycling, a leg longer than its threshold —
-`max_walking_distance` or `max_cycling_distance` — is not silently switched to
-another mode. It comes back with `requires_vehicle: true` and a note naming
-what you asked for, e.g. *"Too far to walk: take public transport or a car"*.
-Raise the threshold if you are willing to go further on your own.
-`max_walking_distance` is required on the request; the UI asks for it in
-kilometres and sends 2 km (2000 m) unless changed. `max_cycling_distance` may
-be omitted and defaults to 5000 m.
-
-Those flagged legs are still costed with driving times, which is why the
-driving matrix is fetched even when you did not ask for it. Without a real
-cost, a 30 km leg would be priced as a seven-hour walk, or dropped entirely,
-since pedestrian routing gives up over long distances. It comes from the same
-Valhalla instance as the other profiles, so it costs nothing extra.
-
-**Public transport is not supported.** No open source engine provides it from
-OSM data alone: it requires a GTFS feed for each city, ingested into
-[OpenTripPlanner](https://www.opentripplanner.org/) or into Valhalla's
-multimodal transit tiles, and re-ingested whenever a feed changes. The feeds
-themselves are free — see the
-[Mobility Database](https://mobilitydatabase.org/),
-[Transitland](https://www.transit.land/), and the national access points EU
-member states are required to run — but keeping them current is ongoing work.
-Legs needing transit are flagged rather than routed. Set
-`MATRIX_PROVIDER=google` if you need real transit routing.
-
-Valhalla also has no live traffic model, so driving times are free-flow
-estimates rather than traffic-aware predictions.
-
-### Distance limits
-
-Valhalla refuses a matrix outright when any pair of places exceeds its limit
-for the chosen profile — 200 km on foot or by bike, 400 km by car on the public
-instance. One place resolving somewhere unexpected is enough to trigger it, so
-the failure names the two furthest-apart stops and how far apart they are.
-Self-hosted instances can raise these limits in `service_limits`. There is also
-a cap of 2500 source–target pairs, or roughly fifty places.
 
 ### Self-hosting Valhalla
 
@@ -322,74 +115,6 @@ the [official Valhalla build instructions](https://github.com/valhalla/valhalla)
 and run `valhalla_service` yourself; it serves `sources_to_targets` on port
 8002 either way.
 
-## The interface
-
-Name the city and confirm it — it is required, because a bare landmark name is
-ambiguous worldwide, and everything you add afterwards is looked up inside it.
-Then add the places, give each one however long you plan to spend there, choose
-how you are getting around, pick where to start and finish, and plan. The
-result is shown as an ordered list of legs and drawn on a map.
-
-Places can be added one at a time or pasted as a whole list. The paste box
-strips the markers people actually use — `-`, `*`, `•`, `1.`, `(2)`, `#3`,
-markdown checkboxes, and any indentation — splitting on lines so that commas
-stay inside names like `Piazza San Marco, Venezia`. It shows how many places it
-found before you commit, skips ones already in your list, and keeps any it
-could not resolve in the box so you can fix the spelling and retry.
-
-Each line can also carry its stay and opening hours after pipes, in either
-order: `Colosseo | 1h30 | 9:00-19:00`, `Pantheon | 9-19`, `Trevi | 15m`.
-Opening hours may give one end only (`10:00-`, `-18:00`). A line whose details
-cannot be read is not added; it stays in the box, as pasted, to be corrected.
-
-The interface is available in English and Italian; the selector is in the
-header and the choice is remembered.
-
-Example
-
-- City or region: `London`
-- Places: `Big Ben`, `Tower Bridge`, `Buckingham Palace`, `Tower of London`
-- Time at each place: `5m` by default, editable per place
-- Opening hours: optional, under each place
-- Getting around: `On foot`
-- Days: `1` — raise it and each day gets its own start and finish selectors
-
-The map uses [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles — no
-API key and no billing. The lines connect stops in visit order as straight
-segments rather than tracing streets; drawing real geometry would mean asking
-Valhalla for route shapes and returning them from the backend. Note that
-`tile.openstreetmap.org` has a
-[tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
-intended for modest traffic; anything heavier should use a self-hosted or
-commercial tile source.
-
-### Exporting an itinerary
-
-**Export Markdown** saves the finished plan as a `.md` file: one section per
-day, stops in visit order with their times, distances and any
-too-far-to-walk notes, plus the trip totals. The file is named after the city
-and the day it was exported — `itinerary-london-2026-08-04.md` — and is written
-in whichever language the interface is set to.
-
-**Export PDF** saves the same plan as an A4 document: a summary of the totals,
-the map, then the days as a numbered timeline. The map is not a screenshot of
-the one on the page — the tiles are fetched again and redrawn around the whole
-trip, so the image is framed on the route no matter where the map happens to
-be panned, and it is drawn at print resolution rather than screen resolution.
-Text is real text, so the file stays searchable and sharp at any zoom.
-
-Both run entirely in the browser. The plan is already in memory once it has
-been computed, so there is nothing to ask the backend for and nothing leaves
-the page, beyond the map tiles the PDF export fetches from the same public
-endpoint the live map uses.
-
-Two limits worth knowing about the PDF. It uses the standard PDF fonts, which
-cover Latin scripts: an accented name comes out as itself, `Ōsaka` loses its
-macron, and a name in a script with no Latin fallback comes out as `?`.
-Embedding a Unicode font would add hundreds of kilobytes to every page load.
-And if a tile does not arrive the map keeps its route and numbers but loses
-that square of background, rather than failing the export.
-
 ## API reference
 
 Every endpoint lives under `/api/v1`. There is no authentication, and jobs are
@@ -408,8 +133,8 @@ restarting the backend loses every plan.
 `GET /health` sits outside the prefix, and FastAPI serves interactive docs at
 [`/docs`](http://localhost:8000/docs) while the backend is running.
 
-A request to `/compute_itinerary`, using every optional field — five places
-over two days, leaving from and returning to the hotel each day:
+A request to `/compute_itinerary` — five places over two days, leaving from and
+returning to the hotel each day:
 
 ```json
 {
@@ -421,10 +146,11 @@ over two days, leaving from and returning to the hotel each day:
   "day_starts": [0, 0],
   "day_ends": [0, 0],
   "visit_seconds": [0, 3600, 1800, 3600, 5400],
-  "start_time": "2026-05-30T09:00:00Z",
+  "opening_hours": [null, null, {"opens": "09:30", "closes": "18:00"}, {"opens": "10:00"}, null],
+  "start_time": "2026-05-30T09:00:00",
   "modes": ["walking"],
   "walking_preference": true,
-  "max_walking_distance": 1000,
+  "max_walking_distance": 2000,
   "max_cycling_distance": 5000
 }
 ```
@@ -435,11 +161,15 @@ Index fields point into `places` and may be negative, counting from the end.
 `modes` is a list for historical reasons, but the interface sends exactly one —
 you travel one way per trip. Passing `resolved_places`, the payloads `/geocode`
 already returned in the same order as `places`, skips geocoding entirely.
+`start_time` is local wall-clock time with no UTC offset, since opening hours
+are read against it.
 
 Failures a client can act on carry a stable `error_code` and machine-readable
 `error_params` beside the English `error` text, so a UI can phrase them in its
 own language: `too_far_for_mode` when the routing engine refuses the distance,
-and `day_budget_exceeded` when the 16-hour daily cap cannot be met.
+`day_budget_exceeded` when the 16-hour daily cap cannot be met, and
+`closes_before_start`, `opening_window_too_short` or `opening_hours_conflict`
+when opening hours cannot be respected.
 
 ## Development
 
